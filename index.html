@@ -171,7 +171,49 @@
         similarityResult: null
       },
       // Topic cards highlighted pharmacophore toggles
-      activePharmacophoreToggles: {}
+      activePharmacophoreToggles: {},
+
+      // Estado del Proyecto Cuatrimestral (Optimización Farmacoquímica 2627)
+      projectData: JSON.parse(localStorage.getItem('qfdos_v4_project') || JSON.stringify({
+        teamNumber: '08',
+        student1Name: 'García Pérez, Elena',
+        student1Email: 'egperez@go.ugr.es',
+        student2Name: 'López Martínez, Carlos',
+        student2Email: 'clopezm@go.ugr.es',
+        selectedPreset: 'tolcapone',
+        activePhase: 0,
+        area: 'SNC',
+        disease: 'Enfermedad de Parkinson (terapia coadyuvante con levodopa)',
+        leadDrug: 'Tolcapona',
+        leadSmiles: 'O=C(c1ccc(C)cc1)c1cc([N+](=O)[O-])c(O)c(O)c1',
+        leadCid: '5538',
+        leadPdb: '1H1D',
+        clinicalFlaw: 'Hepatotoxicidad severa fulminante provocada por bioactivación del grupo nitro por CYP450 a intermediarios reactivos que desacoplan la fosforilación oxidativa mitocondrial.',
+        targetName: 'Catecol-O-metiltransferasa soluble humana (S-COMT)',
+        targetType: 'Enzima intracelular dependiente de Mg2+ y SAM',
+        pharmacophoreDesc: 'Anillo de catecol (1,2-dihidroxibenceno) que coordina el catión Mg2+ en el centro catalítico y grupo electrón-atrayente fuertemente polar en posición 5.',
+        pocketInteractions: 'Coordinación bidentada al ión Mg2+ mediante los grupos hidroxilo en C3 y C4; puente de hidrógeno con Glu199; apilamiento pi-pi aromático con Trp143 y Pro174.',
+        candidateCode: 'CAD-COMT-08',
+        candidateName: 'Ciano-tolcapona (Análogo CN)',
+        candidateSmiles: 'O=C(c1ccc(C)cc1)c1cc(C#N)c(O)c(O)c1',
+        modHypothesis: 'Sustitución bioisostérica no clásica del grupo nitro (-NO2) por un grupo ciano (-CN) en C5. El grupo ciano conserva el fuerte efecto electrón-atrayente (-I, -M) pero carece de actividad redox que genere metabolitos reactivos tóxicos.',
+        bioisostereType: 'Bioisosterismo no clásico de grupo electrón-atrayente (Nitro -> Ciano)',
+        lipinskiAnalysis: 'Ambos compuestos cumplen estrictamente la Regla de Lipinski y Veber. La sustitución por ciano reduce el TPSA en ~25 Å², facilitando la penetración a través de la barrera hematoencefálica (BHE) para acción central además de periférica.',
+        syntheticRoute: 'Etapa 1: Acilación de Friedel-Crafts de tolueno con cloruro de 3,4-dimetoxibenzoilo (AlCl3). Etapa 2: Bromación regioselectiva en C5 con NBS. Etapa 3: Cianación de Rosenmund-von Braun con CuCN en N-metilpirrolidona. Etapa 4: Desmetilación con BBr3 a -78 °C.',
+        startingMaterials: 'Tolueno, cloruro de 3,4-dimetoxibenzoilo, N-bromosuccinimida (NBS), cianuro de cobre(I) (CuCN), tribromuro de boro (BBr3).',
+        labConnection: 'Aperturas de enlace, extracciones líquido-líquido, seguimiento por CCF y 1H RMN aprendidos en las prácticas de laboratorio de QFDOS.',
+        inVitroAssay: 'Ensayo fluorimétrico de actividad COMT usando esculetina y SAM a 8 concentraciones para determinar valor de IC50.',
+        selectivityAssay: 'Selectividad frente a monoamino oxidasa B (MAO-B) y tirosina hidroxilasa humana.',
+        safetyAssay: 'Ensayo de consumo de oxígeno mitocondrial (Seahorse XF) y viabilidad celular en hepatocitos HepG2 (ensayo MTT).',
+        references: [
+          'https://pubmed.ncbi.nlm.nih.gov/10780287/',
+          'https://doi.org/10.1021/jm00085a004',
+          'https://www.rcsb.org/structure/1H1D',
+          'https://pubchem.ncbi.nlm.nih.gov/compound/5538'
+        ],
+        submitted: false,
+        lastSaved: null
+      }))
     };
 
     // Render principal
@@ -284,6 +326,7 @@
               <span class="nav-link ${state.screen === 'estructuras' ? 'active' : ''}" data-nav="estructuras">ESTRUCTURAS [LAB]</span>
               <span class="nav-link ${state.screen === 'simulador' ? 'active' : ''}" data-nav="simulador">AFINIDAD</span>
               <span class="nav-link ${state.screen === 'evaluacion' ? 'active' : ''}" data-nav="evaluacion">EVALUACIÓN</span>
+              <span class="nav-link ${state.screen === 'proyecto' ? 'active' : ''}" data-nav="proyecto">PROYECTO [20%]</span>
               <span class="nav-link ${state.screen === 'glosario' ? 'active' : ''}" data-nav="glosario">GLOSARIO</span>
               <span class="nav-link ${state.screen === 'enlaces' ? 'active' : ''}" data-nav="enlaces">ENLACES</span>
             </nav>
@@ -310,6 +353,7 @@
           <span class="nav-link ${state.screen === 'hub' ? 'active' : ''}" data-nav="hub">HUB</span>
           <span class="nav-link ${state.screen === 'temario' || state.screen === 'topic' ? 'active' : ''}" data-nav="temario">TEMAS</span>
           <span class="nav-link ${state.screen === 'estructuras' ? 'active' : ''}" data-nav="estructuras">MOL</span>
+          <span class="nav-link ${state.screen === 'proyecto' ? 'active' : ''}" data-nav="proyecto">PROY</span>
           <span class="nav-link ${state.screen === 'practicas' ? 'active' : ''}" data-nav="practicas">LAB</span>
           <span class="nav-link" id="mobile-btn-search">BUSCAR</span>
         </div>
@@ -329,6 +373,7 @@
         case 'practicas': return renderPracticasScreen();
         case 'simulador': return renderSimuladorScreen();
         case 'evaluacion': return renderEvaluacionScreen();
+        case 'proyecto': return renderProyectoScreen();
         case 'glosario': return renderGlosarioScreen();
         case 'enlaces': return renderEnlacesScreen();
         default: return renderHubScreen();
@@ -451,6 +496,7 @@
                   <button class="btn btn-primary btn-sm" data-nav="estructuras">LABORATORIO QUÍMICO [RDKIT]</button>
                   <button class="btn btn-secondary btn-sm" data-nav="simulador">SIMULADOR DE AFINIDAD</button>
                   <button class="btn btn-secondary btn-sm" data-nav="evaluacion">CALCULADORA DE NOTA</button>
+                  <button class="btn btn-primary btn-sm" data-nav="proyecto">PROYECTO CONTINUO [20%]</button>
                 </div>
               </div>
             </div>
@@ -1993,6 +2039,453 @@
     // ========================================================================
     // PANTALLA 9: GLOSARIO FARMACOLÓGICO
     // ========================================================================
+    
+    // ========================================================================
+    // PRESETS PARA EL PROYECTO CUATRIMESTRAL (QFDOS 2627)
+    // ========================================================================
+    const PROJECT_PRESETS = {
+      tolcapone: {
+        area: 'SNC',
+        disease: 'Enfermedad de Parkinson (coadyuvante con Levodopa)',
+        leadDrug: 'Tolcapona',
+        leadSmiles: 'O=C(c1ccc(C)cc1)c1cc([N+](=O)[O-])c(O)c(O)c1',
+        leadCid: '5538',
+        leadPdb: '1H1D',
+        clinicalFlaw: 'Hepatotoxicidad severa fulminante provocada por bioactivación del grupo nitro por CYP450 a intermediarios reactivos que desacoplan la fosforilación oxidativa mitocondrial.',
+        targetName: 'Catecol-O-metiltransferasa soluble humana (S-COMT)',
+        targetType: 'Enzima intracelular dependiente de Mg2+ y SAM',
+        pharmacophoreDesc: 'Anillo de catecol (1,2-dihidroxibenceno) que coordina el catión Mg2+ en el centro catalítico y grupo electrón-atrayente fuertemente polar en posición 5.',
+        pocketInteractions: 'Coordinación bidentada al ión Mg2+ mediante los grupos hidroxilo en C3 y C4; puente de hidrógeno con Glu199; apilamiento pi-pi aromático con Trp143 y Pro174.',
+        candidateCode: 'CAD-COMT-08',
+        candidateName: 'Ciano-tolcapona (Análogo CN)',
+        candidateSmiles: 'O=C(c1ccc(C)cc1)c1cc(C#N)c(O)c(O)c1',
+        modHypothesis: 'Sustitución bioisostérica no clásica del grupo nitro (-NO2) por un grupo ciano (-CN) en C5. El grupo ciano conserva el fuerte efecto electrón-atrayente (-I, -M) pero carece de actividad redox que genere metabolitos reactivos tóxicos.',
+        bioisostereType: 'Bioisosterismo no clásico de grupo electrón-atrayente (Nitro -> Ciano)',
+        lipinskiAnalysis: 'Ambos compuestos cumplen estrictamente la Regla de Lipinski y Veber. La sustitución por ciano reduce el TPSA en ~25 Å², facilitando la penetración a través de la barrera hematoencefálica (BHE) para acción central además de periférica.',
+        syntheticRoute: 'Etapa 1: Acilación de Friedel-Crafts de tolueno con cloruro de 3,4-dimetoxibenzoilo (AlCl3). Etapa 2: Bromación regioselectiva en C5 con NBS. Etapa 3: Cianación de Rosenmund-von Braun con CuCN en N-metilpirrolidona. Etapa 4: Desmetilación con BBr3 a -78 °C.',
+        startingMaterials: 'Tolueno, cloruro de 3,4-dimetoxibenzoilo, N-bromosuccinimida (NBS), cianuro de cobre(I) (CuCN), tribromuro de boro (BBr3).',
+        labConnection: 'Apertura de enlaces, extracciones líquido-líquido, seguimiento por CCF y 1H RMN aprendidos en las prácticas de laboratorio de QFDOS.',
+        inVitroAssay: 'Ensayo fluorimétrico de actividad COMT usando esculetina y SAM a 8 concentraciones para determinar valor de IC50.',
+        selectivityAssay: 'Selectividad frente a monoamino oxidasa B (MAO-B) y tirosina hidroxilasa humana.',
+        safetyAssay: 'Ensayo de consumo de oxígeno mitocondrial (Seahorse XF) y viabilidad celular en hepatocitos HepG2 (ensayo MTT).'
+      },
+      nifedipine: {
+        area: 'Cardiovascular',
+        disease: 'Hipertensión arterial y angina de pecho',
+        leadDrug: 'Nifedipino',
+        leadSmiles: 'COC(=O)C1=C(C)NC(C)=C(C1c1ccccc1[N+](=O)[O-])C(=O)OC',
+        leadCid: '4485',
+        leadPdb: '6JP5',
+        clinicalFlaw: 'Vida media plasmática excesivamente corta y picos de concentración rápida que generan taquicardia refleja hipotensiva y cefaleas.',
+        targetName: 'Canales de calcio dependientes de voltaje tipo L (Cav1.2)',
+        targetType: 'Canal iónico transmembrana de 4 dominios',
+        pharmacophoreDesc: 'Anillo de 1,4-dihidropiridina con anillo fenilo orto-sustituido en C4 dispuesto perpendicularmente, y ésteres coplanares en C3 y C5.',
+        pocketInteractions: 'Enlace de hidrógeno del NH de la DHP con Tyr1152; interacciones hidrofóbicas del anillo aromático en el poro del canal.',
+        candidateCode: 'CAD-DHP-08',
+        candidateName: 'Iso-amlodipino (Éster Asimétrico Lipofílico)',
+        candidateSmiles: 'CC(C)OC(=O)C1=C(C)NC(C)=C(C1c1ccccc1Cl)C(=O)OC',
+        modHypothesis: 'Sustitución asimétrica de éster con grupo isopropilo voluminoso y reemplazo del nitro por cloro en orto. Aumenta la lipofilia de membrana para unión sostenida de larga duración.',
+        bioisostereType: 'Bioisosterismo de halógeno aromático (Nitro -> Cloro) y modulación de tamaño de éster',
+        lipinskiAnalysis: 'Mantiene MW moderado y eleva cLogP de 2.2 a 3.4, incrementando el coeficiente de partición en bicapas lipídicas para liberación lenta y vida media superior a 24 horas.',
+        syntheticRoute: 'Condensación multicomponente clásica de Hantzsch modificada con o-clorobenzaldehído, acetoacetato de metilo y 3-aminocrotonato de isopropilo.',
+        startingMaterials: 'o-Clorobenzaldehído, acetoacetato de metilo, acetoacetato de isopropilo, acetato amónico.',
+        labConnection: 'Conexión directa con la práctica de síntesis de 1,4-dihidropiridinas de Hantzsch realizada en el laboratorio de QFDOS.',
+        inVitroAssay: 'Ensayo de fijación de radioligando ([3H]-nitrendipino) en membranas de miocitos cardíacos y vasculares.',
+        selectivityAssay: 'Razón de selectividad vascular frente a miocárdica (vasoselectividad arteriolar vs inotropismo negativo).',
+        safetyAssay: 'Estabilidad metabólica frente a CYP3A4 y control de metabolitos piridínicos inactivos.'
+      },
+      ibuprofen: {
+        area: 'Inflamación / Dolor',
+        disease: 'Artritis reumatoide, dolor osteomuscular e inflamación crónica',
+        leadDrug: 'Ibuprofeno',
+        leadSmiles: 'CC(C)Cc1ccc(cc1)C(C)C(=O)O',
+        leadCid: '3672',
+        leadPdb: '4COX',
+        clinicalFlaw: 'Gastrolesividad severa, erosiones gástricas y riesgo de hemorragia digestiva alta tras uso crónico por acción tópica directa del grupo ácido libre y bloqueo de PGE2 gástrica.',
+        targetName: 'Ciclooxigenasas humanas (COX-1 y COX-2)',
+        targetType: 'Enzima hemoproteína de membrana microsomal',
+        pharmacophoreDesc: 'Ácido arilpropiónico lipofílico con centro estereogénico y carboxilato libre que forma un puente salino con Arg120.',
+        pocketInteractions: 'Puente salino iónico entre el carboxilato y Arg120 en el canal hidrófobo; interacciones lipofílicas del grupo isobutilo con residuos Val349 y Leu352.',
+        candidateCode: 'CAD-AINE-08',
+        candidateName: 'Ibuprofeno-Glicolamida (Profármaco Blando)',
+        candidateSmiles: 'CC(C)Cc1ccc(cc1)C(C)C(=O)OCC(=O)N',
+        modHypothesis: 'Enmascaramiento bioisostérico temporal del grupo carboxilato ácido como éster de 2-amino-2-oxoetilo (glicolamida). Suprime la toxicidad tópica mucosa directa y libera ibuprofeno sistémico mediante esterasas plasmáticas.',
+        bioisostereType: 'Profármaco bioisostérico éster neutro biorreversible',
+        lipinskiAnalysis: 'Aumento del peso molecular a 263 Da y reducción de la acidez. cLogP se ajusta a 2.4, optimizando la absorción entérica con índice Tanimoto de 0.78.',
+        syntheticRoute: 'Etapa 1: Activación del ibuprofeno con cloruro de oxalilo a cloruro de acilo. Etapa 2: Esterificación con 2-hidroxiacetamida (glicolamida) en presencia de trietilamina en diclorometano a 0 °C.',
+        startingMaterials: 'Ibuprofeno racémico, cloruro de oxalilo, 2-hidroxiacetamida, trietilamina.',
+        labConnection: 'Reacciones de acilación y amidación, lavado en embudo de decantación y análisis por CCF similares a la práctica de paracetamol.',
+        inVitroAssay: 'Ensayo de hidrólisis cinética enzimática en plasma humano para medir tasa de liberación de ibuprofeno libre.',
+        selectivityAssay: 'Selectividad de inhibición enzimática COX-1 vs COX-2 con sangre entera humana.',
+        safetyAssay: 'Evaluación de daño a la barrera mucosa en modelo de células epiteliales gástricas humanas (AGS).'
+      }
+    };
+
+
+    // ========================================================================
+    // PANTALLA: PROYECTO CUATRIMESTRAL (LEAD OPTIMIZATION & RDKIT)
+    // ========================================================================
+    function renderProyectoScreen() {
+      const pr = state.projectData;
+      const phaseTitles = [
+        'Fase 0: Indicación y Lead',
+        'Fase 1: Diana y Farmacóforo',
+        'Fase 2: Rediseño Bioisostérico',
+        'Fase 3: Perfilado RDKit',
+        'Fase 4: Retrosíntesis',
+        'Fase 5: Validación Preclínica'
+      ];
+
+      return `
+        <div class="container">
+          <!-- Banner Superior del Proyecto -->
+          <div style="background: linear-gradient(135deg, #1e3a8a 0%, #0d9488 100%); color: #ffffff; padding: 32px; border-radius: 4px; margin-bottom: 24px; box-shadow: var(--shadow-card);">
+            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+              <span class="tag" style="background: rgba(255,255,255,0.2); color: #fff; border: none;">QFDOS 2627</span>
+              <span class="tag" style="background: rgba(255,255,255,0.2); color: #fff; border: none;">EVALUACIÓN CONTINUA (20%)</span>
+              <span class="tag" style="background: #2dd4bf; color: #1e3a8a; font-weight: 700; border: none;">RDKit + PubChem</span>
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 0.85rem; letter-spacing: 0.1em; color: #5eead4; margin-bottom: 4px;">
+              DEPARTAMENTO DE QUÍMICA FARMACÉUTICA Y ORGÁNICA · FACULTAD DE FARMACIA
+            </div>
+            <h1 style="color: #ffffff; font-size: 2.2rem; margin-bottom: 8px; font-weight: 900; letter-spacing: -0.02em;">
+              Proyecto de Optimización Farmacoquímica
+            </h1>
+            <p style="color: rgba(255,255,255,0.9); max-width: 850px; font-size: 1.05rem; line-height: 1.5; margin-bottom: 20px;">
+              Lead Optimization & In Silico Pharmacophore Engineering. Rediseño molecular racional mediante bioisosterismo, verificación in silico con el motor RDKit WASM, análisis retrosintético y diseño de validación preclínica temprana.
+            </p>
+
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 16px;">
+              <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+                <div>
+                  <span style="font-size: 0.78rem; opacity: 0.8; display: block;">EQUIPO:</span>
+                  <strong style="font-size: 0.95rem;">Equipo ${pr.teamNumber}</strong>
+                </div>
+                <div>
+                  <span style="font-size: 0.78rem; opacity: 0.8; display: block;">INTEGRANTES:</span>
+                  <strong style="font-size: 0.95rem;">${pr.student1Name} · ${pr.student2Name}</strong>
+                </div>
+                <div>
+                  <span style="font-size: 0.78rem; opacity: 0.8; display: block;">CANDIDATO:</span>
+                  <strong style="font-family: var(--font-mono); color: #5eead4;">${pr.candidateCode}</strong>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-sm" id="btn-proj-save" style="background: #ffffff; color: #1e3a8a; font-weight: 700;">💾 GUARDAR BORRADOR</button>
+                <button class="btn btn-sm" id="btn-proj-export-md" style="background: #2dd4bf; color: #1e3a8a; font-weight: 800;">📄 EXPORTAR MARKDOWN</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selector de Presets de Ejemplo -->
+          <div class="card" style="margin-bottom: 24px; background: var(--color-surface); border: 1px solid var(--color-border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <strong style="font-size: 0.95rem;">Cargar Caso de Estudio o Modelo de Ejemplo:</strong>
+                <p style="font-size: 0.85rem; color: var(--color-text-secondary); margin: 0;">
+                  Puedes cargar uno de los 3 casos clínicos modelo del curso para ver la estructura completa y experimentar con RDKit.
+                </p>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn-secondary btn-sm ${pr.selectedPreset === 'tolcapone' ? 'active' : ''}" id="btn-preset-tolcapone">
+                  🧠 SNC: Tolcapona → Ciano (Parkinson)
+                </button>
+                <button class="btn btn-secondary btn-sm ${pr.selectedPreset === 'nifedipine' ? 'active' : ''}" id="btn-preset-nifedipine">
+                  ❤️ Cardio: Nifedipino → Éster DHP
+                </button>
+                <button class="btn btn-secondary btn-sm ${pr.selectedPreset === 'ibuprofen' ? 'active' : ''}" id="btn-preset-ibuprofen">
+                  💊 Dolor: Ibuprofeno → Glicolamida
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Comparador Molecular Interactivo RDKit en Tiempo Real -->
+          <div class="card" style="margin-bottom: 24px; border: 2px solid var(--color-border);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <div class="card-kicker" style="color: var(--color-accent); font-weight: 700;">MOTOR RDKit WASM · RENDERIZADO 2D & COMPARACIÓN ESTRUCTURAL</div>
+                <h2 class="card-title" style="margin: 0;">Fármaco de Referencia vs. Candidato Rediseñado</h2>
+              </div>
+              <span class="tag tag-accent" id="proj-tanimoto-val" style="font-family: var(--font-mono); font-size: 0.85rem;">
+                Calculando similitud...
+              </span>
+            </div>
+
+            <!-- Grilla de Estructuras 2D -->
+            <div class="grid-2" style="margin-bottom: 20px;">
+              <!-- Tarjeta Lead Drug -->
+              <div style="background: var(--color-bg); padding: 16px; border: 1px solid var(--color-border); border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <strong style="font-size: 1rem; color: var(--color-text);">Fármaco de Referencia (Lead)</strong>
+                  <span class="tag tag-neutral">REF</span>
+                </div>
+                <div id="project-lead-svg" style="min-height: 220px; display: flex; align-items: center; justify-content: center; background: #ffffff; border: 1px solid var(--color-border-subtle); margin-bottom: 12px;">
+                  <span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--color-text-muted);">Renderizando SMILES con RDKit...</span>
+                </div>
+                <div class="field" style="margin-bottom: 8px;">
+                  <label style="font-size: 0.8rem;">Nombre comercial / DCI:</label>
+                  <input type="text" class="input input-mono input-sm" id="proj-lead-drug" value="${pr.leadDrug}" />
+                </div>
+                <div class="field" style="margin-bottom: 8px;">
+                  <label style="font-size: 0.8rem;">SMILES Canónico:</label>
+                  <input type="text" class="input input-mono input-sm" id="proj-lead-smiles" value="${pr.leadSmiles}" />
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <div class="field" style="flex: 1;">
+                    <label style="font-size: 0.75rem;">PubChem CID:</label>
+                    <input type="text" class="input input-mono input-sm" id="proj-lead-cid" value="${pr.leadCid}" />
+                  </div>
+                  <div class="field" style="flex: 1;">
+                    <label style="font-size: 0.75rem;">PDB ID Diana:</label>
+                    <input type="text" class="input input-mono input-sm" id="proj-lead-pdb" value="${pr.leadPdb}" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tarjeta Candidato Optimizado -->
+              <div style="background: var(--color-bg); padding: 16px; border: 1px solid var(--color-border); border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <strong style="font-size: 1rem; color: var(--color-accent);">Candidato Molecular Rediseñado</strong>
+                  <span class="tag tag-accent">${pr.candidateCode}</span>
+                </div>
+                <div id="project-candidate-svg" style="min-height: 220px; display: flex; align-items: center; justify-content: center; background: #ffffff; border: 1px solid var(--color-border-subtle); margin-bottom: 12px;">
+                  <span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--color-text-muted);">Renderizando SMILES con RDKit...</span>
+                </div>
+                <div class="field" style="margin-bottom: 8px;">
+                  <label style="font-size: 0.8rem;">Denominación análogo / Código:</label>
+                  <input type="text" class="input input-mono input-sm" id="proj-cand-code" value="${pr.candidateCode}" />
+                </div>
+                <div class="field" style="margin-bottom: 8px;">
+                  <label style="font-size: 0.8rem;">SMILES del Candidato:</label>
+                  <input type="text" class="input input-mono input-sm" id="proj-cand-smiles" value="${pr.candidateSmiles}" />
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <div class="field" style="flex: 1;">
+                    <label style="font-size: 0.75rem;">Regla Lipinski:</label>
+                    <span class="chem-badge-ok" id="proj-cand-lipinski-badge" style="display: block; text-align: center; padding: 4px;">CALCULANDO</span>
+                  </div>
+                  <div class="field" style="flex: 1;">
+                    <label style="font-size: 0.75rem;">Regla Veber:</label>
+                    <span class="chem-badge-ok" id="proj-cand-veber-badge" style="display: block; text-align: center; padding: 4px;">CALCULANDO</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tabla Comparativa de Descriptores RDKit -->
+            <div style="overflow-x: auto;">
+              <table class="table-modern" style="margin: 0; font-size: 0.88rem;">
+                <thead>
+                  <tr>
+                    <th>Descriptor Fisicoquímico</th>
+                    <th>Fármaco de Referencia (${pr.leadDrug})</th>
+                    <th>Nuevo Candidato (${pr.candidateCode})</th>
+                    <th>Criterio Druggability / Farmacocinético</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Peso Molecular (MW)</strong></td>
+                    <td id="proj-lead-mw" class="code-val">—</td>
+                    <td id="proj-cand-mw" class="code-val" style="color: var(--color-accent); font-weight: 700;">—</td>
+                    <td>≤ 500 Da (Lipinski)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Lipofilia Estimada (cLogP)</strong></td>
+                    <td id="proj-lead-logp" class="code-val">—</td>
+                    <td id="proj-cand-logp" class="code-val" style="color: var(--color-accent); font-weight: 700;">—</td>
+                    <td>≤ 5.0 (Óptimo 1.5–3.5 para cruce BHE)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Dadores Enlace H (HBD)</strong></td>
+                    <td id="proj-lead-hbd" class="code-val">—</td>
+                    <td id="proj-cand-hbd" class="code-val" style="color: var(--color-accent); font-weight: 700;">—</td>
+                    <td>≤ 5 (Lipinski)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Aceptores Enlace H (HBA)</strong></td>
+                    <td id="proj-lead-hba" class="code-val">—</td>
+                    <td id="proj-cand-hba" class="code-val" style="color: var(--color-accent); font-weight: 700;">—</td>
+                    <td>≤ 10 (Lipinski)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Área Polar Tópica (TPSA)</strong></td>
+                    <td id="proj-lead-tpsa" class="code-val">—</td>
+                    <td id="proj-cand-tpsa" class="code-val" style="color: var(--color-accent); font-weight: 700;">—</td>
+                    <td>≤ 140 Å² (Veber) / &lt; 90 Å² (BHE)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Enlaces Rotables (RotB)</strong></td>
+                    <td id="proj-lead-rotb" class="code-val">—</td>
+                    <td id="proj-cand-rotb" class="code-val" style="color: var(--color-accent); font-weight: 700;">—</td>
+                    <td>≤ 10 (Veber)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Pestañas de Navegación de las 6 Fases -->
+          <div class="tabs" style="margin-bottom: 20px;">
+            ${phaseTitles.map((title, idx) => `
+              <button class="tab-btn ${pr.activePhase === idx ? 'active' : ''}" data-proj-phase="${idx}">
+                ${title}
+              </button>
+            `).join('')}
+          </div>
+
+          <!-- Contenedor del Formulario por Fase -->
+          <div class="card" style="border: 1px solid var(--color-border); padding: 24px;">
+            ${renderPhaseContent(pr.activePhase)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderPhaseContent(phase) {
+      const pr = state.projectData;
+      switch (phase) {
+        case 0:
+          return `
+            <div class="kicker">FASE 0 · INDICACIÓN TERAPÉUTICA & LEAD COMPOUND</div>
+            <h3 style="margin-bottom: 8px;">Selección de Patología y Fármaco de Referencia</h3>
+            <p style="color: var(--color-text-secondary); margin-bottom: 20px; font-size: 0.92rem;">
+              Elegid un fármaco del mercado dentro del temario de QFDOS que presente una limitación química o clínica real que motive su rediseño.
+            </p>
+            <div class="grid-2" style="margin-bottom: 16px;">
+              <div class="field">
+                <label>Área Temática (QFDOS):</label>
+                <select class="input" id="form-area">
+                  <option value="SNC" ${pr.area === 'SNC' ? 'selected' : ''}>🧠 Sistema Nervioso Central (Temas 1–6)</option>
+                  <option value="Cardiovascular" ${pr.area === 'Cardiovascular' ? 'selected' : ''}>❤️ Sistema Cardiovascular & Renal (Tema 9)</option>
+                  <option value="Inflamación / Dolor" ${pr.area === 'Inflamación / Dolor' ? 'selected' : ''}>💊 Mediadores Locales, AINEs & Autacoides (Temas 7–8)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Enfermedad Específica / Indicación:</label>
+                <input type="text" class="input" id="form-disease" value="${pr.disease}" />
+              </div>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Justificación de la Limitación Farmacoquímica o Clínica:</label>
+              <textarea class="input" id="form-flaw" rows="4" style="font-family: var(--font-sans); line-height: 1.5;">${pr.clinicalFlaw}</textarea>
+              <span style="font-size: 0.78rem; color: var(--color-text-muted);">Detalla el metabolito reactivo, la toxicidad o la falta de selectividad que queréis subsanar.</span>
+            </div>
+          `;
+
+        case 1:
+          return `
+            <div class="kicker">FASE 1 · DIANA BIOLÓGICA & FARMACOFORO</div>
+            <h3 style="margin-bottom: 8px;">Mapeo Farmacofórico y Estructura Macromolecular</h3>
+            <p style="color: var(--color-text-secondary); margin-bottom: 20px; font-size: 0.92rem;">
+              Identificad la diana macromolecular con su identificador PDB y describid las interacciones estéricas y electrónicas esenciales.
+            </p>
+            <div class="grid-2" style="margin-bottom: 16px;">
+              <div class="field">
+                <label>Diana Biológica (Nombre completo):</label>
+                <input type="text" class="input" id="form-target-name" value="${pr.targetName}" />
+              </div>
+              <div class="field">
+                <label>Tipo de Diana:</label>
+                <input type="text" class="input" id="form-target-type" value="${pr.targetType}" />
+              </div>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Descripción del Farmacóforo Esencial y Grupos Auxóforos:</label>
+              <textarea class="input" id="form-pharmacophore" rows="3">${pr.pharmacophoreDesc}</textarea>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Interacciones Clave en el Bolsillo de Unión (PDB ${pr.leadPdb}):</label>
+              <textarea class="input" id="form-interactions" rows="3">${pr.pocketInteractions}</textarea>
+            </div>
+          `;
+
+        case 2:
+          return `
+            <div class="kicker">FASE 2 · REDISEÑO MOLECULAR & BIOISOSTERISMO</div>
+            <h3 style="margin-bottom: 8px;">Propuesta Racional del Nuevo Candidato</h3>
+            <p style="color: var(--color-text-secondary); margin-bottom: 20px; font-size: 0.92rem;">
+              Proponed una modificación estructural basada en bioisosterismo formal (clásico o no clásico) orientada a superar la limitación del fármaco base.
+            </p>
+            <div class="grid-2" style="margin-bottom: 16px;">
+              <div class="field">
+                <label>Tipo de Bioisosterismo Aplicado:</label>
+                <input type="text" class="input" id="form-bioisostere" value="${pr.bioisostereType}" />
+              </div>
+              <div class="field">
+                <label>Nombre o Denominación del Análogo:</label>
+                <input type="text" class="input" id="form-cand-name" value="${pr.candidateName}" />
+              </div>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Hipótesis Farmacoquímica de Rediseño:</label>
+              <textarea class="input" id="form-mod-hypo" rows="4">${pr.modHypothesis}</textarea>
+            </div>
+          `;
+
+        case 3:
+          return `
+            <div class="kicker">FASE 3 · PERFILADO IN SILICO (RDKit)</div>
+            <h3 style="margin-bottom: 8px;">Análisis de Propiedades Fisicoquímicas y Reglas de Druggability</h3>
+            <p style="color: var(--color-text-secondary); margin-bottom: 20px; font-size: 0.92rem;">
+              Contrastad los valores calculados en la tabla superior con las Reglas de Lipinski (Rule of 5) y Veber.
+            </p>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Discusión Crítica de Descriptores y Permeabilidad (BHE / Absorción Oral):</label>
+              <textarea class="input" id="form-lipinski" rows="5">${pr.lipinskiAnalysis}</textarea>
+            </div>
+          `;
+
+        case 4:
+          return `
+            <div class="kicker">FASE 4 · VIABILIDAD SINTÉTICA & RETROSÍNTESIS</div>
+            <h3 style="margin-bottom: 8px;">Ruta de Síntesis Orgánica (2 a 3 Etapas)</h3>
+            <p style="color: var(--color-text-secondary); margin-bottom: 20px; font-size: 0.92rem;">
+              Diseñad una ruta sintética plausible para el candidato conectada con las transformaciones químicas vistas en teoría y en las prácticas de QFDOS.
+            </p>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Ruta Sintética Etapa por Etapa (Reactivos y Condiciones):</label>
+              <textarea class="input" id="form-synth-route" rows="4">${pr.syntheticRoute}</textarea>
+            </div>
+            <div class="grid-2" style="margin-bottom: 16px;">
+              <div class="field">
+                <label>Materiales de Partida Comerciales:</label>
+                <input type="text" class="input" id="form-synth-materials" value="${pr.startingMaterials}" />
+              </div>
+              <div class="field">
+                <label>Conexión con el Laboratorio de Prácticas QFDOS:</label>
+                <input type="text" class="input" id="form-synth-connection" value="${pr.labConnection}" />
+              </div>
+            </div>
+          `;
+
+        case 5:
+          return `
+            <div class="kicker">FASE 5 · PROTOCOLO DE VALIDACIÓN PRECLÍNICA</div>
+            <h3 style="margin-bottom: 8px;">Ensayos In Vitro de Afinidad, Selectividad y Seguridad</h3>
+            <p style="color: var(--color-text-secondary); margin-bottom: 20px; font-size: 0.92rem;">
+              Diseñad los ensayos biológicos preliminares para medir la afinidad del candidato, su selectividad de subtipo y la eliminación de la toxicidad inicial.
+            </p>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Ensayo In Vitro de Afinidad (Protocolo y KD / IC50):</label>
+              <textarea class="input" id="form-assay-invitro" rows="3">${pr.inVitroAssay}</textarea>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Ensayo de Selectividad Frente a Subtipos / Isoformas:</label>
+              <textarea class="input" id="form-assay-selectivity" rows="3">${pr.selectivityAssay}</textarea>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+              <label>Cribado de Seguridad Metabólica y Citotoxicidad Temprana:</label>
+              <textarea class="input" id="form-assay-safety" rows="3">${pr.safetyAssay}</textarea>
+            </div>
+          `;
+
+        default:
+          return '';
+      }
+    }
+
     function renderGlosarioScreen() {
       return `
         <div class="container">
@@ -2385,6 +2878,116 @@
     // GESTIÓN DE EVENTOS & INTERACTIVIDAD
     // ========================================================================
     function attachEventListeners() {
+
+      // ====================================================================
+      // EVENTOS DEL PROYECTO CUATRIMESTRAL (2627 QFDOS)
+      // ====================================================================
+      const pr = state.projectData;
+
+      // Navegación de pestañas de fases
+      document.querySelectorAll('[data-proj-phase]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          pr.activePhase = parseInt(btn.getAttribute('data-proj-phase'), 10);
+          render();
+        });
+      });
+
+      // Presets
+      const applyPreset = (key) => {
+        const preset = PROJECT_PRESETS[key];
+        if (!preset) return;
+        pr.selectedPreset = key;
+        Object.assign(pr, preset);
+        localStorage.setItem('qfdos_v4_project', JSON.stringify(pr));
+        render();
+      };
+
+      const pTolBtn = document.getElementById('btn-preset-tolcapone');
+      if (pTolBtn) pTolBtn.addEventListener('click', () => applyPreset('tolcapone'));
+
+      const pNifBtn = document.getElementById('btn-preset-nifedipine');
+      if (pNifBtn) pNifBtn.addEventListener('click', () => applyPreset('nifedipine'));
+
+      const pIbuBtn = document.getElementById('btn-preset-ibuprofen');
+      if (pIbuBtn) pIbuBtn.addEventListener('click', () => applyPreset('ibuprofen'));
+
+      // Inputs de SMILES y código con actualización reactiva
+      const lSmilesInput = document.getElementById('proj-lead-smiles');
+      if (lSmilesInput) {
+        lSmilesInput.addEventListener('change', (e) => {
+          pr.leadSmiles = e.target.value.trim();
+          localStorage.setItem('qfdos_v4_project', JSON.stringify(pr));
+          loadMoleculesSvgAsync();
+        });
+      }
+
+      const cSmilesInput = document.getElementById('proj-cand-smiles');
+      if (cSmilesInput) {
+        cSmilesInput.addEventListener('change', (e) => {
+          pr.candidateSmiles = e.target.value.trim();
+          localStorage.setItem('qfdos_v4_project', JSON.stringify(pr));
+          loadMoleculesSvgAsync();
+        });
+      }
+
+      const bindInput = (id, key) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            pr[key] = e.target.value;
+          });
+        }
+      };
+
+      bindInput('proj-lead-drug', 'leadDrug');
+      bindInput('proj-lead-cid', 'leadCid');
+      bindInput('proj-lead-pdb', 'leadPdb');
+      bindInput('proj-cand-code', 'candidateCode');
+      bindInput('form-area', 'area');
+      bindInput('form-disease', 'disease');
+      bindInput('form-flaw', 'clinicalFlaw');
+      bindInput('form-target-name', 'targetName');
+      bindInput('form-target-type', 'targetType');
+      bindInput('form-pharmacophore', 'pharmacophoreDesc');
+      bindInput('form-interactions', 'pocketInteractions');
+      bindInput('form-bioisostere', 'bioisostereType');
+      bindInput('form-cand-name', 'candidateName');
+      bindInput('form-mod-hypo', 'modHypothesis');
+      bindInput('form-lipinski', 'lipinskiAnalysis');
+      bindInput('form-synth-route', 'syntheticRoute');
+      bindInput('form-synth-materials', 'startingMaterials');
+      bindInput('form-synth-connection', 'labConnection');
+      bindInput('form-assay-invitro', 'inVitroAssay');
+      bindInput('form-assay-selectivity', 'selectivityAssay');
+      bindInput('form-assay-safety', 'safetyAssay');
+
+      // Botón Guardar
+      const saveBtn = document.getElementById('btn-proj-save');
+      if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+          pr.lastSaved = new Date().toISOString();
+          localStorage.setItem('qfdos_v4_project', JSON.stringify(pr));
+          alert('✓ Progreso del Proyecto Cuatrimestral guardado correctamente en tu navegador.');
+        });
+      }
+
+      // Botón Exportar Markdown
+      const exportMdBtn = document.getElementById('btn-proj-export-md');
+      if (exportMdBtn) {
+        exportMdBtn.addEventListener('click', () => {
+          const mdContent = generateProjectMarkdownContent(pr);
+          const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Memoria_QFDOS_${pr.teamNumber}_${pr.candidateCode || 'Candidato'}.md`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
+      }
+
       // Login buttons
       const btnGoogle = document.getElementById('btn-login-google');
       if (btnGoogle) {
@@ -3183,6 +3786,89 @@
       }
 
       // 3. Renderizar el workbench completo si estamos en la pantalla "estructuras"
+      
+      // 4. Renderizar estructuras del Proyecto Cuatrimestral si estamos en la pantalla "proyecto"
+      if (state.screen === 'proyecto') {
+        const pr = state.projectData;
+        const leadSvgContainer = document.getElementById('project-lead-svg');
+        const candidateSvgContainer = document.getElementById('project-candidate-svg');
+
+        if (leadSvgContainer && pr.leadSmiles) {
+          const lSvg = await renderMoleculeSvg(pr.leadSmiles, {
+            width: 380,
+            height: 220,
+            addStereoAnnotation: true,
+            bondLineWidth: 2.0
+          });
+          if (lSvg) leadSvgContainer.innerHTML = lSvg;
+        }
+
+        if (candidateSvgContainer && pr.candidateSmiles) {
+          const cSvg = await renderMoleculeSvg(pr.candidateSmiles, {
+            width: 380,
+            height: 220,
+            addStereoAnnotation: true,
+            bondLineWidth: 2.0
+          });
+          if (cSvg) candidateSvgContainer.innerHTML = cSvg;
+        }
+
+        // Calcular descriptores moleculares con RDKit para ambos
+        try {
+          if (pr.leadSmiles) {
+            const lDesc = await computeDescriptors(pr.leadSmiles);
+            if (lDesc) {
+              const setL = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+              setL('proj-lead-mw', lDesc.mw + ' Da');
+              setL('proj-lead-logp', lDesc.logp);
+              setL('proj-lead-hbd', lDesc.hbd);
+              setL('proj-lead-hba', lDesc.hba);
+              setL('proj-lead-tpsa', lDesc.tpsa + ' Å²');
+              setL('proj-lead-rotb', lDesc.rotb);
+              pr.leadDescriptors = lDesc;
+            }
+          }
+
+          if (pr.candidateSmiles) {
+            const cDesc = await computeDescriptors(pr.candidateSmiles);
+            if (cDesc) {
+              const setC = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+              setC('proj-cand-mw', cDesc.mw + ' Da');
+              setC('proj-cand-logp', cDesc.logp);
+              setC('proj-cand-hbd', cDesc.hbd);
+              setC('proj-cand-hba', cDesc.hba);
+              setC('proj-cand-tpsa', cDesc.tpsa + ' Å²');
+              setC('proj-cand-rotb', cDesc.rotb);
+              pr.candidateDescriptors = cDesc;
+
+              // Lipinski check for candidate
+              const cLipinskiOk = cDesc.mw <= 500 && cDesc.logp <= 5.0 && cDesc.hbd <= 5 && cDesc.hba <= 10;
+              const cVeberOk = cDesc.tpsa <= 140 && cDesc.rotb <= 10;
+              const setBadge = (id, ok, textOk, textFail) => {
+                const el = document.getElementById(id);
+                if (el) {
+                  el.className = ok ? 'chem-badge-ok' : 'chem-badge-fail';
+                  el.innerText = ok ? textOk : textFail;
+                }
+              };
+              setBadge('proj-cand-lipinski-badge', cLipinskiOk, '✓ CUMPLE LIPINSKI', '✕ INFRINGE LIPINSKI');
+              setBadge('proj-cand-veber-badge', cVeberOk, '✓ CUMPLE VEBER', '✕ INFRINGE VEBER');
+            }
+          }
+
+          // Calcular Tanimoto si ambos smiles están presentes
+          if (pr.leadSmiles && pr.candidateSmiles) {
+            const tanimoto = await calculateTanimoto(pr.leadSmiles, pr.candidateSmiles);
+            const tEl = document.getElementById('proj-tanimoto-val');
+            if (tEl && tanimoto !== null) {
+              tEl.innerText = (tanimoto * 100).toFixed(1) + '% (Tanimoto: ' + tanimoto.toFixed(3) + ')';
+            }
+          }
+        } catch (err) {
+          console.warn('Error calculando descriptores del proyecto:', err);
+        }
+      }
+
       if (state.screen === 'estructuras') {
         const lab = state.chemLab;
         const mainSlot = document.getElementById('chem-lab-main-svg');
@@ -3299,6 +3985,92 @@
     // Arranque inicial
     initRDKit();
     render();
+  
+    // Función auxiliar para exportar la memoria en Markdown formateada
+    function generateProjectMarkdownContent(pr) {
+      const bt = '`';
+      return [
+        '# Memoria Técnica: Proyecto de Optimización Farmacoquímica',
+        '## Química Farmacéutica II (2627 QFDOS E) · Curso 2026/2027',
+        '',
+        '---',
+        '',
+        '### Datos del Equipo',
+        '- **Número de Equipo:** Equipo ' + pr.teamNumber,
+        '- **Nombre Estudiante 1:** ' + pr.student1Name + ' (' + pr.student1Email + ')',
+        '- **Nombre Estudiante 2:** ' + pr.student2Name + ' (' + pr.student2Email + ')',
+        '- **Grupo:** Grupo E · Grado en Farmacia · UGR',
+        '- **Código del Candidato:** ' + pr.candidateCode,
+        '- **Fecha de Generación:** ' + new Date().toLocaleDateString('es-ES'),
+        '',
+        '---',
+        '',
+        '## Fase 0: Selección de Patología y Fármaco de Referencia (Lead Compound)',
+        '- **Área Temática:** ' + pr.area,
+        '- **Enfermedad / Indicación:** ' + pr.disease,
+        '- **Fármaco de Referencia:** ' + pr.leadDrug,
+        '- **Código SMILES Canónico (Lead):** ' + bt + pr.leadSmiles + bt,
+        '- **PubChem CID:** ' + pr.leadCid + ' · **PDB ID:** ' + pr.leadPdb,
+        '',
+        '### Justificación de la Limitación Farmacoquímica o Clínica',
+        pr.clinicalFlaw,
+        '',
+        '---',
+        '',
+        '## Fase 1: Mapeo Farmacofórico y Dianas Moleculares',
+        '- **Diana Biológica:** ' + pr.targetName + ' (' + pr.targetType + ')',
+        '- **Código PDB:** ' + pr.leadPdb,
+        '',
+        '### Farmacóforo Esencial y Grupos Auxóforos',
+        pr.pharmacophoreDesc,
+        '',
+        '### Interacciones Clave en el Bolsillo de Unión',
+        pr.pocketInteractions,
+        '',
+        '---',
+        '',
+        '## Fase 2: Rediseño Bioisostérico y Propuesta del Candidato',
+        '- **Código del Candidato:** ' + pr.candidateCode + ' (' + pr.candidateName + ')',
+        '- **Código SMILES Canónico (Candidato):** ' + bt + pr.candidateSmiles + bt,
+        '- **Tipo de Bioisosterismo:** ' + pr.bioisostereType,
+        '',
+        '### Hipótesis Farmacoquímica de Optimización',
+        pr.modHypothesis,
+        '',
+        '---',
+        '',
+        '## Fase 3: Perfilado Quimioinformático In Silico (RDKit)',
+        '### Análisis de Descriptores y Druggability',
+        pr.lipinskiAnalysis,
+        '',
+        '---',
+        '',
+        '## Fase 4: Viabilidad Sintética y Retrosíntesis',
+        '### Ruta Retrosintética en Etapas',
+        pr.syntheticRoute,
+        '',
+        '- **Precursores Comerciales:** ' + pr.startingMaterials,
+        '- **Conexión con Prácticas de Laboratorio QFDOS:** ' + pr.labConnection,
+        '',
+        '---',
+        '',
+        '## Fase 5: Protocolo de Validación Preclínica',
+        '### Ensayo In Vitro de Afinidad (KD / IC50)',
+        pr.inVitroAssay,
+        '',
+        '### Ensayo de Selectividad de Subtipo / Isoformas',
+        pr.selectivityAssay,
+        '',
+        '### Cribado de Seguridad Metabólica y Citotoxicidad',
+        pr.safetyAssay,
+        '',
+        '---',
+        '',
+        '## Referencias Bibliográficas',
+        pr.references.map((r, i) => (i + 1) + '. ' + r).join('\n')
+      ].join('\n');
+    }
+
   </script>
 </body>
 </html>
