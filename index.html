@@ -1,0 +1,2353 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>QFDOS v4 — Química Farmacéutica II · Modernist</title>
+  <meta name="description" content="Portal docente de Química Farmacéutica II (Grupo E), Grado en Farmacia, Universidad de Granada. Diseño Modernist." />
+  <link rel="icon" type="image/png" href="https://i.ibb.co/HLCYDc3c/Logo-primario-QFDOS.png" />
+
+  <!-- Tipografía: Archivo (UI) · JetBrains Mono (Datos) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Estilos Modernist -->
+  <link rel="stylesheet" href="src/styles/modernist.css" />
+
+  <!-- RDKit MinimalLib (WASM) para renderizado 2D de estructuras químicas -->
+  <script src="https://unpkg.com/@rdkit/rdkit@2025.3.4-1.0.0/dist/RDKit_minimal.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Carga del bundle de datos completo de QFDOS -->
+  <script src="src/data/qfdosDataBundle.js"></script>
+
+  <!-- Aplicación SPA Modernist -->
+  <script type="module">
+    import { initRDKit, renderMoleculeSvg } from './src/utils/chemSvg.js';
+
+    // Obtener datos maestros cargados desde el bundle
+    const DATA = window.QFDOS_DATA || {};
+    const TOPICS = DATA.INITIAL_TOPICS || [];
+    const ANNOUNCEMENTS = DATA.INITIAL_ANNOUNCEMENTS || [];
+    const GLOSSARY = DATA.INITIAL_GLOSSARY || [];
+    const RESOURCE_LINKS = DATA.INITIAL_RESOURCE_LINKS || [];
+    const COURSE_INFO = DATA.COURSE_GENERAL_INFO || {};
+    const FIR_QUESTIONS = DATA.FIR_QUESTIONS || [];
+    const NORMAS_SEGURIDAD = DATA.NORMAS_SEGURIDAD_CHECKLIST || [];
+    const LAB_EQUIPMENT = DATA.LAB_EQUIPMENT_INVENTORY || [];
+    const PRACTICE_EXAM_QUESTIONS = DATA.PRACTICE_EXAM_QUESTIONS || [];
+    const COMPOUND_SPECTRA = DATA.COMPOUND_SPECTRA_DATA || {};
+    const REACTION_STEPS = DATA.LAB_REACTION_STEPS || [];
+
+    // Estado global de la aplicación
+    const state = {
+      screen: localStorage.getItem('qfdos_v4_user') ? 'hub' : 'login',
+      user: JSON.parse(localStorage.getItem('qfdos_v4_user') || '{"role":"estudiante","name":"Estudiante QFDOS","email":"estudiante@correo.ugr.es"}'),
+      safetySigned: localStorage.getItem('qfdos_v4_safety_signed') === 'true',
+      selectedTopicId: 'tema-01',
+      activeModal: null, // 'search' | 'question' | 'spotify' | 'quiz' | 'flashcards' | 'fir'
+      searchTerm: '',
+      modalData: null,
+      practicasTab: '00', // '00' | '01' | '02' | '03' | '04' | '05' | '06' | '07'
+
+      // Estado de Calculadora de Rendimientos (Módulo 02)
+      yieldCalc: {
+        preset: 'propranolol',
+        massA: 1.44, // g α-naftol
+        mwA: 144.17,
+        massB: 1.85, // g epiclorhidrina
+        mwB: 92.52,
+        mwProd: 200.24, // g/mol oxirano intermedio
+        massProd: 1.62 // masa obtenida real
+      },
+
+      // Estado de Calculadora de Disoluciones (Módulo 03)
+      solutionCalc: {
+        c1: 1.0, // M
+        v1: 50.0, // mL
+        c2: 0.1, // M
+        v2: 500.0, // mL
+        target: 'v1'
+      },
+
+      // Estado de Taller de Espectroscopia (Módulo 04)
+      spectroCompound: 'propranolol',
+      spectroAssignments: [
+        { peak: '1.20', mult: 'd', integral: '6H', proposed: '-CH(CH3)2', checked: false, correct: true },
+        { peak: '2.85', mult: 'm', integral: '1H', proposed: '-CH(CH3)2', checked: false, correct: true },
+        { peak: '4.10', mult: 'm', integral: '3H', proposed: '-O-CH2-CH(OH)-', checked: false, correct: true },
+        { peak: '7.2-8.3', mult: 'm', integral: '7H', proposed: 'Protones aromáticos naftilo', checked: false, correct: true }
+      ],
+
+      // Estado de Checklist de Equipamiento (Módulo 05)
+      equipmentChecked: JSON.parse(localStorage.getItem('qfdos_v4_equipment') || '{}'),
+
+      // Estado de Simulador de Examen de Prácticas (Módulo 06)
+      labExamAnswers: {},
+      labExamSubmitted: false,
+
+      // Estado de Cuaderno de Parejas (Módulo 07)
+      pairReport: JSON.parse(localStorage.getItem('qfdos_v4_pair_report') || JSON.stringify({
+        pairNumber: '12',
+        student1: 'García Pérez, Elena',
+        student2: 'López Martínez, Carlos',
+        sessionDate: '2026-10-15',
+        synthesisTitle: 'Síntesis de Propranolol (Apertura de Oxirano)',
+        lotNumber: 'PROP-2026-E12',
+        obtainedMass: '1.58',
+        meltingPoint: '95-96 °C',
+        rfValue: '0.45 (Hexano/AcOEt 7:3)',
+        observations: 'Cristalización en caliente con etanol al 96%. Cristales aciculares incoloros de alta pureza.',
+        submitted: false
+      })),
+
+      // Estado de Simulador Biofísico de Afinidad
+      affinitySim: {
+        kd: 10, // nM
+        bmax: 1000, // fmol/mg
+        ligandConc: 25 // nM
+      },
+
+      // Estado de Simulador de Evaluación Continua
+      evalCalc: {
+        finalExam: 6.5,
+        parcial: 7.0,
+        practicas: 8.5,
+        seminarios: 9.0
+      },
+
+      // Estado de Quizzes y Flashcards
+      activeQuizIndex: 0,
+      quizAnswers: {},
+      quizSubmitted: false,
+      activeFlashcardIndex: 0,
+      flashcardFlipped: false
+    };
+
+    // Render principal
+    function render() {
+      const app = document.getElementById('app');
+      if (!app) return;
+
+      if (state.screen === 'login') {
+        app.innerHTML = renderLoginScreen();
+      } else {
+        app.innerHTML = `
+          ${renderHeader()}
+          <main id="main-content" style="padding-bottom: 70px;">
+            ${renderScreenContent()}
+          </main>
+          ${renderMobileNav()}
+          ${state.activeModal ? renderActiveModal() : ''}
+        `;
+      }
+
+      attachEventListeners();
+      loadMoleculesSvgAsync();
+    }
+
+    // ========================================================================
+    // PANTALLA 1: LOGIN
+    // ========================================================================
+    function renderLoginScreen() {
+      return `
+        <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; background-color: var(--color-bg);">
+          <div style="width: 100%; max-width: 680px; background: #ffffff; border: 2px solid var(--color-border); padding: 40px; box-shadow: var(--shadow-modal);">
+            <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+              <span class="tag tag-accent">UGR · GRADO EN FARMACIA</span>
+              <span class="tag tag-neutral">GRUPO E · CURSO 2026/27</span>
+              <span class="tag tag-outline">6 ECTS</span>
+            </div>
+
+            <div class="kicker">DEPARTAMENTO DE QUÍMICA FARMACÉUTICA Y ORGÁNICA</div>
+            <h1 style="font-size: 2.2rem; font-weight: 900; margin-bottom: 8px; letter-spacing: -0.02em;">QUÍMICA FARMACÉUTICA II</h1>
+            <p style="font-size: 1.05rem; color: var(--color-text-secondary); margin-bottom: 24px;">
+              Portal Docente v4 · Modernist Design System. Acceso oficial a temario, dianas estructurales PDB, monografías moleculares, simuladores biofísicos y cuaderno digital de laboratorio.
+            </p>
+
+            <div class="hr"></div>
+
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px;">
+              <button class="btn btn-primary btn-lg btn-block" id="btn-login-google">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.761H12.545z"/></svg>
+                CONTINUAR CON GOOGLE (ACCESO UGR)
+              </button>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <button class="btn btn-secondary btn-block" id="btn-login-guest">
+                  ACCESO REVISIÓN / INVITADO
+                </button>
+                <button class="btn btn-secondary btn-block" id="btn-login-teacher">
+                  MODO DOCENTE / PROFESOR
+                </button>
+              </div>
+            </div>
+
+            <div class="grid-2" style="margin-top: 24px;">
+              <div class="card" style="padding: 16px; border: 1px solid var(--color-border); background-color: var(--color-surface-dim);">
+                <span class="tag tag-outline" style="margin-bottom: 6px;">PERFIL ESTUDIANTE</span>
+                <h4 style="margin-bottom: 4px;">Cuaderno & Evaluaciones</h4>
+                <p style="font-size: 0.8rem; color: var(--color-text-secondary);">
+                  Acceso al cuaderno de laboratorio digital, normas de seguridad firmadas, calculadoras estequiométricas y test interactivo de autoevaluación.
+                </p>
+              </div>
+              <div class="card" style="padding: 16px; border: 1px solid var(--color-border); background-color: var(--color-surface-dim);">
+                <span class="tag tag-accent" style="margin-bottom: 6px;">COORDINACIÓN DOCENTE</span>
+                <h4 style="margin-bottom: 4px;">Dr. Juan José Díaz-Mochón</h4>
+                <p style="font-size: 0.8rem; color: var(--color-text-secondary);">
+                  Profesor Titular · Teoría Grupo E. Despacho en Facultad de Farmacia (Cartuja) y Centro GENYO (PTS).
+                </p>
+              </div>
+            </div>
+
+            <div class="card-meta" style="margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--color-border-subtle); display: flex; justify-content: space-between;">
+              <span>UGR · FACULTAD DE FARMACIA</span>
+              <span>QFDOS PORTAL v4.0</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // HEADER & NAVEGACIÓN
+    // ========================================================================
+    function renderHeader() {
+      const isTeacher = state.user.role === 'profesor';
+      return `
+        <header class="header-sticky">
+          <div class="header-topbar">
+            <div>UNIVERSIDAD DE GRANADA · FACULTAD DE FARMACIA · 2627 QFDOS E</div>
+            <div>TURNO DE TARDE · GRUPO E · CURSO 2026/27</div>
+          </div>
+          <div class="header-main">
+            <div class="brand-title" id="brand-link">
+              <span>QFDOS</span>
+              <span class="brand-badge">PORTAL v4</span>
+            </div>
+
+            <nav class="nav-links">
+              <span class="nav-link ${state.screen === 'hub' ? 'active' : ''}" data-nav="hub">HUB</span>
+              <span class="nav-link ${state.screen === 'curso' ? 'active' : ''}" data-nav="curso">CURSO</span>
+              <span class="nav-link ${state.screen === 'temario' || state.screen === 'topic' ? 'active' : ''}" data-nav="temario">TEMARIO</span>
+              <span class="nav-link ${state.screen === 'practicas' ? 'active' : ''}" data-nav="practicas">PRÁCTICAS</span>
+              <span class="nav-link ${state.screen === 'simulador' ? 'active' : ''}" data-nav="simulador">AFINIDAD</span>
+              <span class="nav-link ${state.screen === 'evaluacion' ? 'active' : ''}" data-nav="evaluacion">EVALUACIÓN</span>
+              <span class="nav-link ${state.screen === 'glosario' ? 'active' : ''}" data-nav="glosario">GLOSARIO</span>
+              <span class="nav-link ${state.screen === 'enlaces' ? 'active' : ''}" data-nav="enlaces">ENLACES</span>
+            </nav>
+
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" id="btn-trigger-search" title="Buscar fármacos o temas (Ctrl+K)">
+                BUSCADOR [⌘K]
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-trigger-podcast" title="Escuchar Podcast QFDOS">
+                PODCAST
+              </button>
+              <button class="btn btn-ghost btn-sm" id="btn-logout" title="Cerrar sesión">
+                SALIR [${state.user.role.toUpperCase()}]
+              </button>
+            </div>
+          </div>
+        </header>
+      `;
+    }
+
+    function renderMobileNav() {
+      return `
+        <div class="mobile-nav-bottom">
+          <span class="nav-link ${state.screen === 'hub' ? 'active' : ''}" data-nav="hub">HUB</span>
+          <span class="nav-link ${state.screen === 'temario' || state.screen === 'topic' ? 'active' : ''}" data-nav="temario">TEMAS</span>
+          <span class="nav-link ${state.screen === 'practicas' ? 'active' : ''}" data-nav="practicas">LAB</span>
+          <span class="nav-link ${state.screen === 'curso' ? 'active' : ''}" data-nav="curso">GUÍA</span>
+          <span class="nav-link" id="mobile-btn-search">BUSCAR</span>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // ROUTER DE CONTENIDO
+    // ========================================================================
+    function renderScreenContent() {
+      switch (state.screen) {
+        case 'hub': return renderHubScreen();
+        case 'curso': return renderCursoScreen();
+        case 'temario': return renderTemarioScreen();
+        case 'topic': return renderTopicScreen();
+        case 'practicas': return renderPracticasScreen();
+        case 'simulador': return renderSimuladorScreen();
+        case 'evaluacion': return renderEvaluacionScreen();
+        case 'glosario': return renderGlosarioScreen();
+        case 'enlaces': return renderEnlacesScreen();
+        default: return renderHubScreen();
+      }
+    }
+
+    // ========================================================================
+    // PANTALLA 2: HUB (DASHBOARD)
+    // ========================================================================
+    function renderHubScreen() {
+      const topTopics = TOPICS.slice(1, 5); // Excluye Tema 00 para la preview de 4 temas
+      return `
+        <div class="container">
+          <!-- Hero Section -->
+          <div class="hero-architectural">
+            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+              <span class="tag tag-accent">GRUPO E · TURNO DE TARDE</span>
+              <span class="tag tag-neutral">EVALUACIÓN CONTINUA (70/20/5/5)</span>
+              <span class="tag tag-outline">AULA 7 · L, M, J 17:00H</span>
+            </div>
+            <div class="kicker">ASIGNATURA OBLIGATORIA · 4.º CURSO · GRADO EN FARMACIA</div>
+            <h1 class="hero-title">QUÍMICA FARMACÉUTICA II</h1>
+            <p class="hero-subtitle">
+              Portal docente y cuaderno digital de laboratorio oficial. Diseño molecular biofísico, relaciones estructura-actividad (SAR), síntesis en laboratorio, mecanismos enzimáticos y banco oficial de preparación FIR.
+            </p>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <button class="btn btn-primary" data-nav="temario">EXPLORAR TEMARIO [11 TEMAS]</button>
+              <button class="btn btn-secondary" data-nav="practicas">CUADERNO DE LABORATORIO</button>
+              <button class="btn btn-dark" id="btn-hero-fir">SIMULADOR OFICIAL FIR</button>
+            </div>
+          </div>
+
+          <!-- Fila de 4 Estadísticas con Reglas Verticales -->
+          <div class="stat-row" style="margin-bottom: 36px;">
+            <div class="stat-col">
+              <div class="stat-value">11</div>
+              <div class="stat-label">Unidades Temáticas</div>
+            </div>
+            <div class="stat-col">
+              <div class="stat-value">54</div>
+              <div class="stat-label">Fármacos Monografiados</div>
+            </div>
+            <div class="stat-col">
+              <div class="stat-value">136</div>
+              <div class="stat-label">Preguntas Oficiales FIR</div>
+            </div>
+            <div class="stat-col">
+              <div class="stat-value">80+</div>
+              <div class="stat-label">Flashcards de Estudio</div>
+            </div>
+          </div>
+
+          <!-- Dos Columnas: Avisos + Herramientas -->
+          <div class="grid-2" style="margin-bottom: 40px;">
+            <!-- Columna Avisos -->
+            <div class="card">
+              <div class="card-kicker">DOCENCIA & CALENDARIO</div>
+              <h2 class="card-title">Tablón Oficial de Avisos</h2>
+              <p class="card-body" style="margin-bottom: 16px;">
+                Comunicados oficiales del Dr. Juan José Díaz-Mochón y avisos de incidencias de prácticas.
+              </p>
+              
+              <div style="display: flex; flex-direction: column; gap: 14px;">
+                ${ANNOUNCEMENTS.map(a => `
+                  <div style="border-left: 3px solid var(--color-accent); padding-left: 14px; background: var(--color-bg); padding: 12px 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <span class="tag tag-mono" style="font-size: 0.68rem;">${a.date}</span>
+                      <span class="tag ${a.priority === 'alta' ? 'tag-accent' : 'tag-neutral'}">${a.category || 'Aviso'}</span>
+                    </div>
+                    <div style="font-weight: 800; font-size: 0.95rem; margin-bottom: 4px;">${a.title}</div>
+                    <div style="font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.4;">${a.content}</div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Columna Herramientas Rápidas -->
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div class="grid-2">
+                <div class="card card-interactive" data-nav="curso" style="cursor: pointer;">
+                  <span class="tag tag-accent" style="margin-bottom: 8px;">CURSO</span>
+                  <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Guía & Horarios</h3>
+                  <p style="font-size: 0.82rem; color: var(--color-text-muted);">
+                    Horarios de clase (Aula 7), calendario de exámenes con ponderación oficial y tutorías.
+                  </p>
+                </div>
+
+                <div class="card card-interactive" data-nav="practicas" style="cursor: pointer;">
+                  <span class="tag tag-accent" style="margin-bottom: 8px;">LABORATORIO</span>
+                  <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Prácticas QFDOS</h3>
+                  <p style="font-size: 0.82rem; color: var(--color-text-muted);">
+                    Normas, protocolos, calculadora estequiométrica, disoluciones y cuaderno de parejas.
+                  </p>
+                </div>
+
+                <div class="card card-interactive" id="card-quick-search" style="cursor: pointer;">
+                  <span class="tag tag-neutral" style="margin-bottom: 8px;">BUSCADOR</span>
+                  <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Fármacos & Dianas</h3>
+                  <p style="font-size: 0.82rem; color: var(--color-text-muted);">
+                    Búsqueda instantánea con estructuras químicas 2D, códigos PDB y propiedades.
+                  </p>
+                </div>
+
+                <div class="card card-interactive" id="card-quick-question" style="cursor: pointer;">
+                  <span class="tag tag-neutral" style="margin-bottom: 8px;">BUZÓN</span>
+                  <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Consultas Docentes</h3>
+                  <p style="font-size: 0.82rem; color: var(--color-text-muted);">
+                    Envío directo de dudas teóricas o de laboratorio al profesorado de la asignatura.
+                  </p>
+                </div>
+              </div>
+
+              <div class="card" style="background-color: var(--color-surface-dim); border: 2px solid var(--color-border);">
+                <div class="card-kicker">SIMULADORES AVANZADOS</div>
+                <h3 style="font-size: 1.15rem; margin-bottom: 6px;">Biofísica & Farmacocinética ADMET</h3>
+                <p style="font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 12px;">
+                  Calcula afinidades ligando-receptor (ecuación de Hill) y verifica reglas de Lipinski y Veber para candidatos clínicos.
+                </p>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-secondary btn-sm" data-nav="simulador">SIMULADOR DE AFINIDAD</button>
+                  <button class="btn btn-secondary btn-sm" data-nav="evaluacion">CALCULADORA DE NOTA</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Preview de Temas -->
+          <div style="margin-top: 32px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 18px;">
+              <div>
+                <div class="kicker">PLAN DOCENTE 2026/27</div>
+                <h2>Unidades Temáticas Destacadas</h2>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-nav="temario">VER TODOS LOS TEMAS [11]</button>
+            </div>
+
+            <div class="grid-4">
+              ${topTopics.map(t => `
+                <div class="card card-interactive" data-open-topic="${t.id}" style="cursor: pointer;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span class="tag tag-mono">${t.number}</span>
+                    <span class="tag tag-accent">PUBLICADO</span>
+                  </div>
+                  <h3 style="font-size: 1.1rem; margin-bottom: 6px;">${t.title}</h3>
+                  <p style="font-size: 0.82rem; color: var(--color-text-secondary); margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                    ${t.subtitle}
+                  </p>
+                  <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px;">
+                    ${(t.keyConcepts || []).slice(0, 2).map(c => `<span class="tag tag-outline" style="font-size: 0.65rem;">${c}</span>`).join('')}
+                  </div>
+                  <div class="card-meta">
+                    <span>${t.drugs ? t.drugs.length : 0} Fármacos</span>
+                    <span>${t.testQuestions ? t.testQuestions.length : 0} Tests</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // PANTALLA 3: CURSO (INFORMACIÓN & HORARIOS)
+    // ========================================================================
+    function renderCursoScreen() {
+      const exams = COURSE_INFO.examSchedule || [];
+      const tutoring = COURSE_INFO.tutoring || {};
+      return `
+        <div class="container">
+          <div class="kicker">INFORMACIÓN ACADÉMICA OFICIAL</div>
+          <h1 style="margin-bottom: 8px;">Guía del Curso & Horarios</h1>
+          <p style="color: var(--color-text-secondary); max-width: 800px; margin-bottom: 24px;">
+            Química Farmacéutica II (2627 QFDOS E) · Grado en Farmacia · Universidad de Granada.
+          </p>
+
+          <div class="hr"></div>
+
+          <!-- Grid de Información de Asignatura y Profesorado -->
+          <div class="grid-2" style="margin-bottom: 32px;">
+            <div class="card">
+              <div class="card-kicker">DATOS GENERALES</div>
+              <h2 class="card-title">Asignatura & Departamento</h2>
+              <div class="table-container" style="border: none; margin: 8px 0;">
+                <table class="table">
+                  <tr><th style="width: 35%;">Código</th><td>2041142 (2627 QFDOS E)</td></tr>
+                  <tr><th>Créditos</th><td>6,0 ECTS (Teoría, Seminarios y Laboratorio)</td></tr>
+                  <tr><th>Curso & Grupo</th><td>4.º Curso · Grupo E (Turno de Tarde)</td></tr>
+                  <tr><th>Facultad</th><td>Facultad de Farmacia (Campus de Cartuja)</td></tr>
+                  <tr><th>Departamento</th><td>Química Farmacéutica y Orgánica</td></tr>
+                  <tr><th>Aula Oficial</th><td><strong>Aula 7</strong> (Lunes, Martes y Jueves a las 17:00 h)</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-kicker">PROFESORADO RESPONSABLE</div>
+              <h2 class="card-title">Docencia & Coordinación</h2>
+              <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 12px;">
+                <div style="border-left: 3px solid var(--color-accent); padding-left: 12px;">
+                  <div style="font-weight: 800; font-size: 1rem;">Dr. Juan José Díaz-Mochón</div>
+                  <div style="font-size: 0.8rem; color: var(--color-text-muted);">Profesor Titular · Responsable y Docente Único de Teoría (Grupo E)</div>
+                  <div style="font-size: 0.85rem; font-family: var(--font-mono); margin-top: 4px;">
+                    <a href="mailto:juandiaz@go.ugr.es">juandiaz@go.ugr.es</a>
+                  </div>
+                </div>
+                <div style="border-left: 3px solid var(--color-border); padding-left: 12px;">
+                  <div style="font-weight: 800; font-size: 1rem;">Dra. Ana Sousa</div>
+                  <div style="font-size: 0.8rem; color: var(--color-text-muted);">Coordinadora de Prácticas de Laboratorio (Gestión de Puestos e Incidencias)</div>
+                  <div style="font-size: 0.85rem; font-family: var(--font-mono); margin-top: 4px;">
+                    <a href="mailto:ana.sousa@ugr.es">ana.sousa@ugr.es</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tutorías Oficiales -->
+          <div class="card" style="margin-bottom: 32px;">
+            <div class="card-kicker">ATENCIÓN AL ALUMNADO</div>
+            <h2 class="card-title">Horarios y Ubicaciones de Tutorías</h2>
+            <div class="grid-3" style="margin-top: 16px;">
+              <div style="background: var(--color-bg); padding: 16px; border: 1px solid var(--color-border);">
+                <div class="tag tag-accent" style="margin-bottom: 6px;">CAMPUS CARTUJA</div>
+                <h4 style="margin-bottom: 6px;">Facultad de Farmacia</h4>
+                <p style="font-size: 0.85rem; color: var(--color-text-secondary);">
+                  Departamento de Química Farmacéutica y Orgánica (Planta 2.ª).<br />
+                  <strong>Lunes, Martes y Jueves: 15:00 - 17:00 h</strong>
+                </p>
+              </div>
+              <div style="background: var(--color-bg); padding: 16px; border: 1px solid var(--color-border);">
+                <div class="tag tag-neutral" style="margin-bottom: 6px;">CAMPUS SALUD (PTS)</div>
+                <h4 style="margin-bottom: 6px;">Centro GENYO</h4>
+                <p style="font-size: 0.85rem; color: var(--color-text-secondary);">
+                  Avenida de la Ilustración 114 (Parque Tecnológico de la Salud).<br />
+                  Tutorías de investigación y proyectos (previa cita por correo).
+                </p>
+              </div>
+              <div style="background: var(--color-bg); padding: 16px; border: 1px solid var(--color-border);">
+                <div class="tag tag-outline" style="margin-bottom: 6px;">CONSULTAS VIRTUALES</div>
+                <h4 style="margin-bottom: 6px;">Google Meet & Correo</h4>
+                <p style="font-size: 0.85rem; color: var(--color-text-secondary);">
+                  Resolución de dudas asíncronas vía buzón del portal y sesiones online concertadas con el profesorado.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Calendario Oficial de Exámenes -->
+          <div class="card">
+            <div class="card-kicker">RÉGIMEN DE CONVOCATORIAS</div>
+            <h2 class="card-title">Calendario Oficial de Exámenes (2026/2027)</h2>
+            <p class="card-body" style="margin-bottom: 16px;">
+              Aprobado en Junta de Facultad. Ponderaciones oficiales en régimen de evaluación continua:
+            </p>
+
+            <div class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Convocatoria / Prueba</th>
+                    <th>Fecha</th>
+                    <th>Hora</th>
+                    <th>Ponderación</th>
+                    <th>Carácter & Observaciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${exams.map(e => `
+                    <tr>
+                      <td><strong>${e.tipo}</strong></td>
+                      <td>${e.fecha}</td>
+                      <td>${e.hora}</td>
+                      <td><span class="tag tag-accent">${e.ponderacion}</span></td>
+                      <td>${e.observaciones}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // PANTALLA 4: TEMARIO (LISTADO DE 11 UNIDADES)
+    // ========================================================================
+    function renderTemarioScreen() {
+      const filter = state.searchTerm.toLowerCase().trim();
+      const filteredTopics = TOPICS.filter(t => {
+        if (!filter) return true;
+        const inTitle = t.title.toLowerCase().includes(filter);
+        const inSub = (t.subtitle || '').toLowerCase().includes(filter);
+        const inDesc = (t.description || '').toLowerCase().includes(filter);
+        const inConcepts = (t.keyConcepts || []).some(c => c.toLowerCase().includes(filter));
+        const inDrugs = (t.drugs || []).some(d => d.name.toLowerCase().includes(filter));
+        return inTitle || inSub || inDesc || inConcepts || inDrugs;
+      });
+
+      return `
+        <div class="container">
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; gap: 16px;">
+            <div>
+              <div class="kicker">PROGRAMA DOCENTE COMPLETO</div>
+              <h1>Temario de la Asignatura</h1>
+              <p style="color: var(--color-text-secondary);">11 unidades temáticas oficiales con monografías, estructuras 2D y dianas PDB.</p>
+            </div>
+            
+            <div style="width: 100%; max-width: 380px;">
+              <input type="text" class="input input-mono" id="input-temario-filter" placeholder="Filtrar por título, fármaco, concepto..." value="${state.searchTerm}" />
+            </div>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="grid-3">
+            ${filteredTopics.map(t => `
+              <div class="card card-interactive" style="display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span class="tag tag-mono">${t.number}</span>
+                    <span class="tag tag-accent">${t.status || 'PUBLICADO'}</span>
+                  </div>
+                  <h3 style="font-size: 1.25rem; margin-bottom: 6px;">${t.title}</h3>
+                  <div style="font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 10px;">${t.subtitle}</div>
+                  <p style="font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.45; margin-bottom: 14px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+                    ${t.description}
+                  </p>
+                  <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px;">
+                    ${(t.keyConcepts || []).slice(0, 3).map(c => `<span class="tag tag-outline" style="font-size: 0.65rem;">${c}</span>`).join('')}
+                  </div>
+                </div>
+
+                <div>
+                  <div class="card-meta" style="margin-bottom: 14px;">
+                    <span>${t.drugs ? t.drugs.length : 0} Fármacos</span>
+                    <span>${t.testQuestions ? t.testQuestions.length : 0} Tests</span>
+                    <span>${t.flashcards ? t.flashcards.length : 0} Cards</span>
+                  </div>
+                  <button class="btn btn-primary btn-block btn-sm" data-open-topic="${t.id}">
+                    ACCEDER AL TEMA [${t.number}]
+                  </button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // PANTALLA 5: TOPIC (DETALLE DE TEMA)
+    // ========================================================================
+    function renderTopicScreen() {
+      const topic = TOPICS.find(t => t.id === state.selectedTopicId) || TOPICS[1];
+      return `
+        <div class="container">
+          <div style="margin-bottom: 16px;">
+            <button class="btn btn-secondary btn-sm" data-nav="temario">← VOLVER AL TEMARIO</button>
+          </div>
+
+          <!-- Cabecera del Tema -->
+          <div class="card" style="margin-bottom: 28px;">
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <span class="tag tag-mono">${topic.number}</span>
+              <span class="tag tag-accent">${topic.status || 'PUBLICADO'}</span>
+              ${topic.pdbTargetId ? `<span class="tag tag-outline">PDB: ${topic.pdbTargetId}</span>` : ''}
+            </div>
+            <h1 style="font-size: 2.3rem; margin-bottom: 8px;">${topic.title}</h1>
+            <div style="font-size: 1.15rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 16px;">${topic.subtitle}</div>
+            <p style="font-size: 0.95rem; color: var(--color-text-secondary); line-height: 1.6; max-width: 900px; margin-bottom: 20px;">
+              ${topic.description}
+            </p>
+
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px;">
+              ${(topic.keyConcepts || []).map(c => `<span class="tag tag-neutral">${c}</span>`).join('')}
+            </div>
+
+            <!-- Botones de Acción Didáctica -->
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; border-top: 2px solid var(--color-border); padding-top: 18px;">
+              <button class="btn btn-primary" id="btn-topic-quiz" data-topic-id="${topic.id}">
+                TEST AUTOEVALUACIÓN [${topic.testQuestions ? topic.testQuestions.length : 0} PREGUNTAS]
+              </button>
+              <button class="btn btn-secondary" id="btn-topic-flashcards" data-topic-id="${topic.id}">
+                FLASHCARDS DE REPASO [${topic.flashcards ? topic.flashcards.length : 0}]
+              </button>
+              <button class="btn btn-dark" id="btn-topic-fir" data-topic-id="${topic.id}">
+                PREGUNTAS FIR ASOCIADAS
+              </button>
+              ${topic.geminiNotebookUrl ? `
+                <a href="${topic.geminiNotebookUrl}" target="_blank" rel="noreferrer" class="btn btn-ghost">
+                  NOTEBOOKLM
+                </a>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Diana Terapéutica Estructural -->
+          ${topic.pdbTargetId ? `
+            <div class="card" style="margin-bottom: 28px; background-color: var(--color-surface-dim);">
+              <div class="card-kicker">DIANA ESTRUCTURAL & FARMACOFORO</div>
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <h3 style="margin-bottom: 4px;">${topic.targetName || 'Complejo Enzimático / Receptor Diana'}</h3>
+                  <p style="font-size: 0.85rem; color: var(--color-text-muted);">
+                    Coordenadas cristalográficas depositadas en el Protein Data Bank (RCSB PDB).
+                  </p>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <span class="tag tag-accent tag-mono" style="font-size: 0.85rem; padding: 6px 12px;">PDB ID: ${topic.pdbTargetId}</span>
+                  <a href="https://www.rcsb.org/structure/${topic.pdbTargetId}" target="_blank" rel="noreferrer" class="btn btn-secondary btn-sm">
+                    VER ESTRUCTURA 3D EN RCSB PDB ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Monografías de Fármacos de Referencia -->
+          <div style="margin-bottom: 32px;">
+            <div class="kicker">FARMACOQUÍMICA & ESTRUCTURAS 2D</div>
+            <h2 style="margin-bottom: 16px;">Fármacos de Referencia</h2>
+
+            ${(!topic.drugs || topic.drugs.length === 0) ? `
+              <div class="card" style="padding: 24px; text-align: center; color: var(--color-text-muted);">
+                Este tema es introductorio de guía docente o metodológico y no tiene fármacos de referencia específicos.
+              </div>
+            ` : `
+              <div class="grid-2">
+                ${topic.drugs.map((d, idx) => `
+                  <div class="card" style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                      <div>
+                        <h3 style="font-size: 1.2rem; margin-bottom: 2px;">${d.name}</h3>
+                        <span class="tag tag-accent" style="font-size: 0.68rem;">${d.role}</span>
+                      </div>
+                      ${d.formula ? `<span class="tag tag-mono">${d.formula}</span>` : ''}
+                    </div>
+
+                    <!-- Visualizador 2D Vectorial de Estructura Química -->
+                    <div class="chem-svg-container" id="chem-slot-${topic.id}-${idx}" data-smiles="${d.smiles}" style="margin: 12px 0;">
+                      <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Generando estructura 2D...</div>
+                    </div>
+
+                    <!-- Tabla de Propiedades Moleculares -->
+                    <div class="table-container" style="margin: 8px 0; border: 1px solid var(--color-border-subtle);">
+                      <table class="table" style="font-size: 0.78rem;">
+                        <tr>
+                          <th>MW</th><td>${d.mw ? d.mw + ' Da' : '—'}</td>
+                          <th>LogP</th><td>${d.logP !== undefined ? d.logP : '—'}</td>
+                        </tr>
+                        <tr>
+                          <th>HBD</th><td>${d.hbd !== undefined ? d.hbd : '—'}</td>
+                          <th>HBA</th><td>${d.hba !== undefined ? d.hba : '—'}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-muted); word-break: break-all; margin-top: 6px;">
+                      SMILES: ${d.smiles}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // PANTALLA 6: PRÁCTICAS (CUADERNO DIGITAL DE LABORATORIO - 8 MÓDULOS)
+    // ========================================================================
+    function renderPracticasScreen() {
+      return `
+        <div class="container">
+          <div class="kicker">LABORATORIO DOCENTE · GRADO EN FARMACIA</div>
+          <h1 style="margin-bottom: 8px;">Cuaderno de Prácticas QFDOS</h1>
+          <p style="color: var(--color-text-secondary); max-width: 800px; margin-bottom: 20px;">
+            Síntesis orgánica farmacéutica, control de pureza, espectroscopia RMN/EM y calculadoras estequiométricas en vivo.
+          </p>
+
+          <div class="hr"></div>
+
+          <!-- Selector de los 8 Módulos de Laboratorio -->
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+            <button class="btn ${state.practicasTab === '00' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="00">
+              00 NORMAS SEGURIDAD ${state.safetySigned ? '✓' : '⚠️'}
+            </button>
+            <button class="btn ${state.practicasTab === '01' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="01">
+              01 PROTOCOLOS SÍNTESIS
+            </button>
+            <button class="btn ${state.practicasTab === '02' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="02">
+              02 CALC. RENDIMIENTO
+            </button>
+            <button class="btn ${state.practicasTab === '03' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="03">
+              03 DISOLUCIONES C1V1
+            </button>
+            <button class="btn ${state.practicasTab === '04' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="04">
+              04 ESPECTROSCOPIA
+            </button>
+            <button class="btn ${state.practicasTab === '05' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="05">
+              05 MATERIAL Y MONTAJES
+            </button>
+            <button class="btn ${state.practicasTab === '06' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="06">
+              06 SIMULADOR EXAMEN
+            </button>
+            <button class="btn ${state.practicasTab === '07' ? 'btn-primary' : 'btn-secondary'} btn-sm" data-ptab="07">
+              07 CUADERNO PAREJAS
+            </button>
+          </div>
+
+          <!-- Panel Activo de Prácticas -->
+          <div id="practicas-panel">
+            ${renderPracticasTabContent()}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderPracticasTabContent() {
+      switch (state.practicasTab) {
+        // --------------------------------------------------------------------
+        // MÓDULO 00: NORMAS DE SEGURIDAD & FIRMA DIGITAL
+        // --------------------------------------------------------------------
+        case '00':
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 00 · ACCESO OBLIGATORIO</div>
+              <h2 class="card-title">Normativa de Seguridad y Prevención en Laboratorio</h2>
+              <p class="card-body" style="margin-bottom: 16px;">
+                La realización de las prácticas de Química Farmacéutica II exige el conocimiento y cumplimiento estricto de los protocolos de seguridad química y gestión de residuos.
+              </p>
+
+              <div class="table-container" style="margin-bottom: 24px;">
+                <table class="table">
+                  <thead>
+                    <tr><th>Cód.</th><th>Regla de Seguridad</th><th>Justificación Técnica</th><th>EPI Requerido</th></tr>
+                  </thead>
+                  <tbody>
+                    ${NORMAS_SEGURIDAD.slice(0, 6).map(n => `
+                      <tr>
+                        <td><span class="tag tag-mono">${n.id}</span></td>
+                        <td><strong>${n.title}</strong><div style="font-size: 0.8rem; color: var(--color-text-secondary);">${n.description}</div></td>
+                        <td>${n.rationale || 'Prevención de accidentes y contaminación'}</td>
+                        <td><span class="tag tag-neutral">${n.epiRequired ? n.epiRequired.join(', ') : 'Bata y Gafas'}</span></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style="background-color: var(--color-surface-dim); border: 2px solid var(--color-border); padding: 24px;">
+                <div class="card-kicker">COMPUERTA DE REGISTRO & COMPROMISO</div>
+                <h3 style="margin-bottom: 8px;">Firma Digital del Alumno/a</h3>
+                <p style="font-size: 0.88rem; color: var(--color-text-secondary); margin-bottom: 16px;">
+                  Declaro haber leído, comprendido y aceptado las normas de seguridad del laboratorio de Química Farmacéutica II de la UGR.
+                </p>
+
+                ${state.safetySigned ? `
+                  <div style="background: #dcfce7; border: 2px solid #166534; padding: 14px; color: #166534; font-weight: 700; margin-bottom: 12px;">
+                    ✓ NORMAS ACEPTADAS Y FIRMADAS DIGITALMENTE POR ${state.user.name.toUpperCase()} (${state.user.email}). ACCESO AL CUADERNO DESBLOQUEADO.
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btn-revoke-safety">RENOVAR / REVOCAR FIRMA</button>
+                ` : `
+                  <div class="grid-2" style="margin-bottom: 16px;">
+                    <div class="field">
+                      <label>Nombre y Apellidos</label>
+                      <input type="text" class="input" id="input-sign-name" value="${state.user.name}" />
+                    </div>
+                    <div class="field">
+                      <label>Correo Electrónico UGR</label>
+                      <input type="email" class="input" id="input-sign-email" value="${state.user.email}" />
+                    </div>
+                  </div>
+                  <button class="btn btn-primary btn-lg" id="btn-sign-safety">
+                    FIRMAR Y DESBLOQUEAR CUADERNO DE LABORATORIO
+                  </button>
+                `}
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MÓDULO 01: PROTOCOLOS DETALLADOS DE SÍNTESIS
+        // --------------------------------------------------------------------
+        case '01':
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 01 · TÉCNICA EXPERIMENTAL</div>
+              <h2 class="card-title">Protocolos Detallados de Síntesis Farmacéutica</h2>
+              <p class="card-body" style="margin-bottom: 20px;">
+                Procedimientos experimentales para la síntesis de fármacos cardiovasculares y analgésicos.
+              </p>
+
+              <div style="display: flex; flex-direction: column; gap: 24px;">
+                <!-- Reacción 1: Propranolol -->
+                <div style="border: 2px solid var(--color-border); padding: 20px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h3>1. Síntesis de Propranolol (Betabloqueante Adrenérgico)</h3>
+                    <span class="tag tag-accent">2 ETAPAS</span>
+                  </div>
+                  <div class="table-container" style="border: none; margin: 8px 0;">
+                    <table class="table" style="font-size: 0.85rem;">
+                      <tr><th>Paso 1: Apertura de Oxirano</th><td>α-Naftol + Epiclorhidrina + NaOH (aq) ➔ 2-(1-Naftil)oximetiloxirano.</td></tr>
+                      <tr><th>Paso 2: Aminólisis Nucleofílica</th><td>Oxirano + Isopropilamina en exceso a reflujo ➔ Propranolol base.</td></tr>
+                      <tr><th>Purificación & Caracterización</th><td>Recristalización en etanol/éter. Control por CCF (Hexano/AcOEt 7:3) y p.f. (96 °C).</td></tr>
+                      <tr><th>Precauciones Críticas</th><td>La epiclorhidrina es carcinógena y tóxica: pipetear SIEMPRE en vitrina extractora.</td></tr>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Reacción 2: DHPP / Dihidropiridinas (Hantzsch) -->
+                <div style="border: 2px solid var(--color-border); padding: 20px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h3>2. Síntesis de Dihidropiridinas (Reacción Multicomponente de Hantzsch)</h3>
+                    <span class="tag tag-neutral">1 ETAPA</span>
+                  </div>
+                  <div class="table-container" style="border: none; margin: 8px 0;">
+                    <table class="table" style="font-size: 0.85rem;">
+                      <tr><th>Reactivos</th><td>Benzaldehído (1 equiv.) + Acetoacetato de metilo (2 equiv.) + Amoníaco concentrado (1.5 equiv.).</td></tr>
+                      <tr><th>Procedimiento</th><td>Reflujo durante 2 h en etanol al 96%. Enfriamiento en baño de hielo y filtración a vacío en Büchner.</td></tr>
+                      <tr><th>Producto Obtenido</th><td>2,6-Dimetil-4-fenil-1,4-dihidropiridina-3,5-dicarboxilato de dimetilo (DHPP, p.f. 196 °C).</td></tr>
+                      <tr><th>Análogo Clínico</th><td>Sustitución con 2-nitrobenzaldehído ➔ Nifedipino (bloqueante de canales de Ca²⁺).</td></tr>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Reacción 3: Paracetamol -->
+                <div style="border: 2px solid var(--color-border); padding: 20px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h3>3. Síntesis de Paracetamol (Acetil-p-aminofenol)</h3>
+                    <span class="tag tag-outline">ACILACIÓN SELECTIVA</span>
+                  </div>
+                  <div class="table-container" style="border: none; margin: 8px 0;">
+                    <table class="table" style="font-size: 0.85rem;">
+                      <tr><th>Reactivos</th><td>4-Aminofenol + Anhídrido acético en medio acuoso tamponado.</td></tr>
+                      <tr><th>Quimioselectividad</th><td>Acilación preferente del grupo amino frente al hidroxilo fenólico debido a su mayor nucleofilia.</td></tr>
+                      <tr><th>Aislamiento</th><td>Precipitación en medio frío, recristalización en agua y secado en estufa a 60 °C (p.f. 169-171 °C).</td></tr>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MÓDULO 02: CALCULADORA DE RENDIMIENTOS ESTEQUIOMÉTRICA EN VIVO
+        // --------------------------------------------------------------------
+        case '02':
+          // Derivar cálculos en vivo
+          const c = state.yieldCalc;
+          const molesA = c.mwA > 0 ? c.massA / c.mwA : 0;
+          const molesB = c.mwB > 0 ? c.massB / c.mwB : 0;
+          const limiting = molesA <= molesB ? 'Reactivo A' : 'Reactivo B';
+          const limitingMoles = Math.min(molesA, molesB);
+          const theoreticalYieldG = limitingMoles * c.mwProd;
+          const percentYield = theoreticalYieldG > 0 ? (c.massProd / theoreticalYieldG) * 100 : 0;
+
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 02 · CÁLCULO ESTEQUIOMÉTRICO EN VIVO</div>
+              <h2 class="card-title">Calculadora de Reactivo Limitante y Rendimientos</h2>
+              <p class="card-body" style="margin-bottom: 16px;">
+                Introduce los pesos y masas molares de tus reactivos para calcular el reactivo limitante, la masa teórica esperada y el rendimiento real obtenido.
+              </p>
+
+              <!-- Presets Rápidos -->
+              <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+                <span style="font-size: 0.82rem; font-weight: 800; align-self: center;">PRESETS:</span>
+                <button class="btn btn-secondary btn-sm" id="preset-prop">SÍNTESIS PROPRANOLOL</button>
+                <button class="btn btn-secondary btn-sm" id="preset-dhpp">SÍNTESIS DHPP (HANTZSCH)</button>
+                <button class="btn btn-secondary btn-sm" id="preset-paracetamol">SÍNTESIS PARACETAMOL</button>
+              </div>
+
+              <!-- Formulario de 6 Inputs -->
+              <div class="grid-3" style="margin-bottom: 24px;">
+                <div class="field">
+                  <label>Masa Reactivo A (g)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="yield-massA" value="${c.massA}" />
+                </div>
+                <div class="field">
+                  <label>PM Reactivo A (g/mol)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="yield-mwA" value="${c.mwA}" />
+                </div>
+                <div class="field" style="background: var(--color-surface-dim); padding: 10px; border: 1px solid var(--color-border);">
+                  <label>Moles Reactivo A</label>
+                  <div class="mono" style="font-size: 1.1rem; font-weight: 700;">${molesA.toFixed(4)} mol</div>
+                </div>
+
+                <div class="field">
+                  <label>Masa Reactivo B (g)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="yield-massB" value="${c.massB}" />
+                </div>
+                <div class="field">
+                  <label>PM Reactivo B (g/mol)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="yield-mwB" value="${c.mwB}" />
+                </div>
+                <div class="field" style="background: var(--color-surface-dim); padding: 10px; border: 1px solid var(--color-border);">
+                  <label>Moles Reactivo B</label>
+                  <div class="mono" style="font-size: 1.1rem; font-weight: 700;">${molesB.toFixed(4)} mol</div>
+                </div>
+
+                <div class="field">
+                  <label>PM Producto Esperado (g/mol)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="yield-mwProd" value="${c.mwProd}" />
+                </div>
+                <div class="field">
+                  <label>Masa Obtenida Real (g)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="yield-massProd" value="${c.massProd}" />
+                </div>
+                <div class="field" style="background: var(--color-surface-dim); padding: 10px; border: 1px solid var(--color-border);">
+                  <label>Reactivo Limitante</label>
+                  <div style="font-weight: 800; color: var(--color-accent); font-size: 1.1rem;">${limiting}</div>
+                </div>
+              </div>
+
+              <!-- Resultados en Fila de Métricas -->
+              <div class="stat-row" style="margin-bottom: 20px;">
+                <div class="stat-col">
+                  <div class="stat-value">${theoreticalYieldG.toFixed(3)} g</div>
+                  <div class="stat-label">Rendimiento Teórico Esperado</div>
+                </div>
+                <div class="stat-col">
+                  <div class="stat-value">${c.massProd.toFixed(3)} g</div>
+                  <div class="stat-label">Masa Real Aislada</div>
+                </div>
+                <div class="stat-col">
+                  <div class="stat-value" style="color: ${percentYield >= 70 ? 'var(--color-success)' : percentYield >= 45 ? 'var(--color-warning)' : 'var(--color-accent)'};">
+                    ${percentYield.toFixed(1)} %
+                  </div>
+                  <div class="stat-label">Rendimiento Real Obtenido</div>
+                </div>
+              </div>
+
+              <div style="background: var(--color-bg); padding: 16px; border: 1px solid var(--color-border); font-size: 0.9rem;">
+                <strong>Diagnóstico de laboratorio:</strong> 
+                ${percentYield >= 80 ? 'Excelente rendimiento sintético. Las técnicas de reflujo y aislamiento se han ejecutado con precisión.' : 
+                  percentYield >= 50 ? 'Rendimiento estándar aceptable en síntesis orgánica farmacéutica. Se han producido pérdidas menores en lavados o recristalización.' :
+                  'Rendimiento bajo (<50%). Se recomienda revisar la temperatura de reflujo, el tiempo de reacción o verificar la pérdida de producto en las aguas madres de cristalización.'}
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MÓDULO 03: CALCULADORA DE DISOLUCIONES (C1V1 = C2V2)
+        // --------------------------------------------------------------------
+        case '03':
+          const sc = state.solutionCalc;
+          let calculatedVal = 0;
+          let calculatedLabel = '';
+
+          if (sc.target === 'v1') {
+            calculatedVal = sc.c1 > 0 ? (sc.c2 * sc.v2) / sc.c1 : 0;
+            calculatedLabel = 'Volumen V1 necesario de disolución concentrada (mL)';
+          } else if (sc.target === 'c1') {
+            calculatedVal = sc.v1 > 0 ? (sc.c2 * sc.v2) / sc.v1 : 0;
+            calculatedLabel = 'Concentración C1 inicial requerida (M)';
+          } else if (sc.target === 'c2') {
+            calculatedVal = sc.v2 > 0 ? (sc.c1 * sc.v1) / sc.v2 : 0;
+            calculatedLabel = 'Concentración C2 final obtenida (M)';
+          } else {
+            calculatedVal = sc.c2 > 0 ? (sc.c1 * sc.v1) / sc.c2 : 0;
+            calculatedLabel = 'Volumen V2 final alcanzable (mL)';
+          }
+
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 03 · REACTIVOS & DILUCIONES</div>
+              <h2 class="card-title">Calculadora de Disoluciones (C₁V₁ = C₂V₂)</h2>
+              <p class="card-body" style="margin-bottom: 20px;">
+                Introduce los 3 valores conocidos para despejar automáticamente la cuarta variable.
+              </p>
+
+              <div class="field" style="margin-bottom: 20px;">
+                <label>Variable Incógnita a Calcular</label>
+                <select class="select" id="sol-target">
+                  <option value="v1" ${sc.target === 'v1' ? 'selected' : ''}>Calcular V1 (Volumen inicial de concentrado a pipetear)</option>
+                  <option value="c1" ${sc.target === 'c1' ? 'selected' : ''}>Calcular C1 (Concentración inicial requerida)</option>
+                  <option value="c2" ${sc.target === 'c2' ? 'selected' : ''}>Calcular C2 (Concentración final resultante)</option>
+                  <option value="v2" ${sc.target === 'v2' ? 'selected' : ''}>Calcular V2 (Volumen final a enrasar)</option>
+                </select>
+              </div>
+
+              <div class="grid-4" style="margin-bottom: 24px;">
+                <div class="field">
+                  <label>C1: Conc. Inicial (M)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="sol-c1" value="${sc.c1}" ${sc.target === 'c1' ? 'disabled' : ''} />
+                </div>
+                <div class="field">
+                  <label>V1: Vol. Inicial (mL)</label>
+                  <input type="number" step="0.1" class="input input-mono" id="sol-v1" value="${sc.v1}" ${sc.target === 'v1' ? 'disabled' : ''} />
+                </div>
+                <div class="field">
+                  <label>C2: Conc. Final (M)</label>
+                  <input type="number" step="0.01" class="input input-mono" id="sol-c2" value="${sc.c2}" ${sc.target === 'c2' ? 'disabled' : ''} />
+                </div>
+                <div class="field">
+                  <label>V2: Vol. Final (mL)</label>
+                  <input type="number" step="0.1" class="input input-mono" id="sol-v2" value="${sc.v2}" ${sc.target === 'v2' ? 'disabled' : ''} />
+                </div>
+              </div>
+
+              <div class="stat-row">
+                <div class="stat-col">
+                  <div class="stat-value">${calculatedVal.toFixed(2)}</div>
+                  <div class="stat-label">${calculatedLabel}</div>
+                </div>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MÓDULO 04: TALLER DE ESPECTROSCOPIA INTERACTIVO
+        // --------------------------------------------------------------------
+        case '04':
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 04 · ELUCIDACIÓN ESTRUCTURAL</div>
+              <h2 class="card-title">Taller de Espectroscopia RMN ¹H y EM</h2>
+              <p class="card-body" style="margin-bottom: 16px;">
+                Asigna los desplazamientos químicos (δ ppm), multiplicidades e integrales a la estructura del fármaco sintetizado.
+              </p>
+
+              <!-- Selector de Compuesto -->
+              <div style="display: flex; gap: 8px; margin-bottom: 18px;">
+                <button class="btn ${state.spectroCompound === 'propranolol' ? 'btn-primary' : 'btn-secondary'} btn-sm" id="btn-spectro-prop">PROPRANOLOL</button>
+                <button class="btn ${state.spectroCompound === 'dhpp' ? 'btn-primary' : 'btn-secondary'} btn-sm" id="btn-spectro-dhpp">DHPP (DIHIDROPIRIDINA)</button>
+                <button class="btn ${state.spectroCompound === 'paracetamol' ? 'btn-primary' : 'btn-secondary'} btn-sm" id="btn-spectro-para">PARACETAMOL</button>
+              </div>
+
+              <!-- Tabla de Asignación Editable -->
+              <div class="table-container">
+                <table class="table">
+                  <thead>
+                    <tr><th>δ (ppm)</th><th>Multiplicidad</th><th>Integral</th><th>Asignación Propuesta</th><th>Estado</th></tr>
+                  </thead>
+                  <tbody>
+                    ${state.spectroAssignments.map((row, idx) => `
+                      <tr>
+                        <td class="mono"><strong>${row.peak}</strong></td>
+                        <td class="mono">${row.mult}</td>
+                        <td class="mono">${row.integral}</td>
+                        <td>
+                          <input type="text" class="input" style="padding: 4px 8px; font-size: 0.85rem;" value="${row.proposed}" id="spectro-row-${idx}" />
+                        </td>
+                        <td>
+                          ${row.checked ? (row.correct ? '<span class="tag tag-success">CORRECTO ✓</span>' : '<span class="tag tag-accent">REVISAR ✗</span>') : '<span class="tag tag-outline">PENDIENTE</span>'}
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="btn btn-primary" id="btn-check-spectro">COMPROBAR ASIGNACIONES</button>
+                <button class="btn btn-secondary" id="btn-reset-spectro">RESETEAR TABLA</button>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MÓDULO 05: MATERIAL Y MONTAJES DE LABORATORIO
+        // --------------------------------------------------------------------
+        case '05':
+          const checkedCount = Object.values(state.equipmentChecked).filter(Boolean).length;
+          const totalEquip = Math.min(LAB_EQUIPMENT.length, 8);
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 05 · EQUIPAMIENTO & APARATAJE</div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h2 class="card-title" style="margin: 0;">Checklist de Material y Montajes</h2>
+                <span class="tag tag-accent">${checkedCount} / ${totalEquip} VERIFICADOS</span>
+              </div>
+              <p class="card-body" style="margin-bottom: 20px;">
+                Comprueba la disponibilidad y estado del instrumental necesario antes de iniciar la síntesis.
+              </p>
+
+              <div class="grid-2">
+                ${LAB_EQUIPMENT.slice(0, 8).map((eq, idx) => `
+                  <div style="border: 2px solid var(--color-border); padding: 14px; background: ${state.equipmentChecked[eq.id] ? 'var(--color-surface-dim)' : '#ffffff'};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <span class="tag tag-mono">${eq.id}</span>
+                      <input type="checkbox" class="equip-checkbox" data-eq-id="${eq.id}" ${state.equipmentChecked[eq.id] ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--color-accent);" />
+                    </div>
+                    <h4 style="margin-bottom: 4px;">${eq.name}</h4>
+                    <p style="font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.4;">${eq.description || eq.safetyNote || 'Material esencial para la práctica.'}</p>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MÓDULO 06: SIMULADOR DE EXAMEN DE PRÁCTICAS
+        // --------------------------------------------------------------------
+        case '06':
+          const examQuestions = PRACTICE_EXAM_QUESTIONS.slice(0, 5);
+          let score = 0;
+          if (state.labExamSubmitted) {
+            examQuestions.forEach((q, idx) => {
+              if (state.labExamAnswers[idx] === q.correctIndex) score++;
+            });
+          }
+
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 06 · AUTOEVALUACIÓN DE TÉCNICAS</div>
+              <h2 class="card-title">Simulador de Examen de Laboratorio</h2>
+              <p class="card-body" style="margin-bottom: 20px;">
+                Batería de 5 preguntas sobre seguridad, cálculos estequiométricos, cromatografía y espectroscopia.
+              </p>
+
+              ${state.labExamSubmitted ? `
+                <div class="stat-row" style="margin-bottom: 24px;">
+                  <div class="stat-col">
+                    <div class="stat-value">${score} / ${examQuestions.length}</div>
+                    <div class="stat-label">Puntuación Final Obtenida</div>
+                  </div>
+                  <div class="stat-col">
+                    <div class="stat-value" style="color: ${score >= 4 ? 'var(--color-success)' : score >= 3 ? 'var(--color-warning)' : 'var(--color-accent)'};">
+                      ${score >= 3 ? 'APTO ✓' : 'NO APTO ✗'}
+                    </div>
+                    <div class="stat-label">Calificación de Laboratorio</div>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div style="display: flex; flex-direction: column; gap: 20px; margin-bottom: 24px;">
+                ${examQuestions.map((q, qIdx) => `
+                  <div style="border: 2px solid var(--color-border); padding: 18px; background: #ffffff;">
+                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                      <span class="tag tag-mono">PREGUNTA 0${qIdx + 1}</span>
+                      ${state.labExamSubmitted ? (state.labExamAnswers[qIdx] === q.correctIndex ? '<span class="tag tag-success">ACIERTO</span>' : '<span class="tag tag-accent">FALLO</span>') : ''}
+                    </div>
+                    <div style="font-weight: 800; font-size: 1rem; margin-bottom: 12px;">${q.question}</div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                      ${q.options.map((opt, optIdx) => `
+                        <label style="display: flex; align-items: center; gap: 10px; font-size: 0.9rem; padding: 8px 12px; border: 1px solid var(--color-border-subtle); cursor: pointer; background: ${state.labExamAnswers[qIdx] === optIdx ? 'var(--color-surface-dim)' : 'transparent'};">
+                          <input type="radio" name="lab-exam-q-${qIdx}" value="${optIdx}" ${state.labExamAnswers[qIdx] === optIdx ? 'checked' : ''} ${state.labExamSubmitted ? 'disabled' : ''} />
+                          <span>${opt}</span>
+                        </label>
+                      `).join('')}
+                    </div>
+
+                    ${state.labExamSubmitted ? `
+                      <div style="margin-top: 12px; padding: 10px; background: var(--color-bg); font-size: 0.85rem; border-left: 3px solid var(--color-accent);">
+                        <strong>Explicación:</strong> ${q.explanation || 'Respuesta correcta: Opción ' + (q.correctIndex + 1)}
+                      </div>
+                    ` : ''}
+                  </div>
+                `).join('')}
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                ${!state.labExamSubmitted ? `
+                  <button class="btn btn-primary btn-lg" id="btn-submit-lab-exam">CORREGIR EXAMEN</button>
+                ` : `
+                  <button class="btn btn-secondary" id="btn-retry-lab-exam">REINTENTAR SIMULADOR</button>
+                `}
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MÓDULO 07: CUADERNO DE PAREJAS (ENTREGA Y REGISTRO)
+        // --------------------------------------------------------------------
+        case '07':
+          const rep = state.pairReport;
+          return `
+            <div class="card">
+              <div class="card-kicker">MÓDULO 07 · REGISTRO EXPERIMENTAL</div>
+              <h2 class="card-title">Cuaderno de Laboratorio por Parejas</h2>
+              <p class="card-body" style="margin-bottom: 20px;">
+                Registra los resultados experimentales de tu puesto de trabajo. Estos datos se archivan en el historial de laboratorio del Grupo E.
+              </p>
+
+              ${rep.submitted ? `
+                <div style="background: #dcfce7; border: 2px solid #166534; padding: 16px; margin-bottom: 20px;">
+                  <h4 style="color: #166534; margin-bottom: 4px;">✓ INFORME DE SESIÓN REGISTRADO CON ÉXITO</h4>
+                  <p style="font-size: 0.85rem; color: #166534;">Lote ${rep.lotNumber} guardado correctamente. Puedes imprimir o generar la copia oficial.</p>
+                </div>
+              ` : ''}
+
+              <div class="grid-2" style="margin-bottom: 16px;">
+                <div class="field">
+                  <label>Número de Pareja / Puesto</label>
+                  <input type="text" class="input input-mono" id="rep-pair" value="${rep.pairNumber}" />
+                </div>
+                <div class="field">
+                  <label>Fecha de la Sesión</label>
+                  <input type="date" class="input input-mono" id="rep-date" value="${rep.sessionDate}" />
+                </div>
+                <div class="field">
+                  <label>Estudiante 1</label>
+                  <input type="text" class="input" id="rep-student1" value="${rep.student1}" />
+                </div>
+                <div class="field">
+                  <label>Estudiante 2</label>
+                  <input type="text" class="input" id="rep-student2" value="${rep.student2}" />
+                </div>
+              </div>
+
+              <div class="field" style="margin-bottom: 16px;">
+                <label>Práctica / Síntesis Realizada</label>
+                <input type="text" class="input" id="rep-title" value="${rep.synthesisTitle}" />
+              </div>
+
+              <div class="grid-3" style="margin-bottom: 16px;">
+                <div class="field">
+                  <label>Lote de Producto</label>
+                  <input type="text" class="input input-mono" id="rep-lot" value="${rep.lotNumber}" />
+                </div>
+                <div class="field">
+                  <label>Masa Aislada (g)</label>
+                  <input type="text" class="input input-mono" id="rep-mass" value="${rep.obtainedMass}" />
+                </div>
+                <div class="field">
+                  <label>Punto de Fusión Medido (°C)</label>
+                  <input type="text" class="input input-mono" id="rep-mp" value="${rep.meltingPoint}" />
+                </div>
+              </div>
+
+              <div class="field" style="margin-bottom: 24px;">
+                <label>Observaciones Experimentales & CCF</label>
+                <textarea class="textarea" id="rep-obs">${rep.observations}</textarea>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <button class="btn btn-primary" id="btn-save-pair-report">GUARDAR Y REGISTRAR SESIÓN</button>
+                <button class="btn btn-secondary" id="btn-print-pair-report">EXPORTAR / IMPRIMIR INFORME</button>
+              </div>
+            </div>
+          `;
+
+        default:
+          return `<div>Selecciona un módulo de prácticas.</div>`;
+      }
+    }
+
+    // ========================================================================
+    // PANTALLA 7: SIMULADOR DE AFINIDAD BIOFÍSICA
+    // ========================================================================
+    function renderSimuladorScreen() {
+      const sim = state.affinitySim;
+      const bound = (sim.bmax * sim.ligandConc) / (sim.kd + sim.ligandConc);
+      const occupancy = (bound / sim.bmax) * 100;
+
+      return `
+        <div class="container">
+          <div class="kicker">BIOFÍSICA DE INTERACCIÓN FÁRMACO-RECEPTOR</div>
+          <h1 style="margin-bottom: 8px;">Simulador Biofísico de Afinidad</h1>
+          <p style="color: var(--color-text-secondary); max-width: 800px; margin-bottom: 24px;">
+            Modela la unión en equilibrio según la ley de acción de masas: B = (Bmax · [L]) / (KD + [L]).
+          </p>
+
+          <div class="hr"></div>
+
+          <div class="grid-2" style="margin-bottom: 32px;">
+            <div class="card">
+              <div class="card-kicker">PARÁMETROS EXPERIMENTALES</div>
+              <h3 style="margin-bottom: 16px;">Controles de Unión</h3>
+
+              <div class="field">
+                <label>Constante de Disociación KD: <span class="mono" style="color: var(--color-accent);">${sim.kd} nM</span></label>
+                <input type="range" min="1" max="100" value="${sim.kd}" id="sim-kd" style="width: 100%; accent-color: var(--color-accent);" />
+              </div>
+
+              <div class="field">
+                <label>Concentración de Ligando [L]: <span class="mono" style="color: var(--color-accent);">${sim.ligandConc} nM</span></label>
+                <input type="range" min="1" max="200" value="${sim.ligandConc}" id="sim-conc" style="width: 100%; accent-color: var(--color-accent);" />
+              </div>
+
+              <div class="field">
+                <label>Capacidad Máxima Bmax: <span class="mono" style="color: var(--color-accent);">${sim.bmax} fmol/mg</span></label>
+                <input type="range" min="100" max="2000" step="50" value="${sim.bmax}" id="sim-bmax" style="width: 100%; accent-color: var(--color-accent);" />
+              </div>
+            </div>
+
+            <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <div class="card-kicker">RESULTADO EN EL EQUILIBRIO</div>
+                <h3 style="margin-bottom: 16px;">Ocupación de Receptores</h3>
+                
+                <div class="stat-row" style="margin-bottom: 18px;">
+                  <div class="stat-col">
+                    <div class="stat-value">${bound.toFixed(1)}</div>
+                    <div class="stat-label">Unión Específica (fmol/mg)</div>
+                  </div>
+                  <div class="stat-col">
+                    <div class="stat-value" style="color: var(--color-success);">${occupancy.toFixed(1)} %</div>
+                    <div class="stat-label">Ocupación Relativa (%)</div>
+                  </div>
+                </div>
+
+                <div style="font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.5;">
+                  Cuando [L] = KD (${sim.kd} nM), la ocupación del receptor es exactamente del 50%. A la concentración actual de ${sim.ligandConc} nM, se alcanza el ${occupancy.toFixed(1)}% del efecto saturante.
+                </div>
+              </div>
+
+              <div style="height: 12px; background: var(--color-surface-dim); border: 2px solid var(--color-border); margin-top: 20px;">
+                <div style="height: 100%; width: ${occupancy}%; background: var(--color-accent);"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // PANTALLA 8: EVALUACIÓN CONTINUA (PONDERACIÓN & SIMULADOR)
+    // ========================================================================
+    function renderEvaluacionScreen() {
+      const ev = state.evalCalc;
+      const finalApproved = ev.finalExam >= 5.0;
+      const calculatedGrade = finalApproved ? (ev.finalExam * 0.70 + ev.parcial * 0.20 + ev.practicas * 0.05 + ev.seminarios * 0.05) : ev.finalExam;
+
+      return `
+        <div class="container">
+          <div class="kicker">CRITERIOS OFICIALES DE CALIFICACIÓN</div>
+          <h1 style="margin-bottom: 8px;">Sistema de Evaluación Continua</h1>
+          <p style="color: var(--color-text-secondary); max-width: 800px; margin-bottom: 24px;">
+            Criterios aprobados por la Universidad de Granada para Química Farmacéutica II (Grupo E).
+          </p>
+
+          <div class="hr"></div>
+
+          <!-- Desglose de Ponderación Oficial -->
+          <div class="grid-4" style="margin-bottom: 32px;">
+            <div class="card" style="border-top: 4px solid var(--color-accent);">
+              <div class="stat-value">70%</div>
+              <div class="stat-label">Examen Final Oficial</div>
+              <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 8px;">
+                Obligatorio. Requiere mínimo 5,0 sobre 10 para promediar la evaluación continua.
+              </div>
+            </div>
+
+            <div class="card" style="border-top: 4px solid var(--color-border);">
+              <div class="stat-value">20%</div>
+              <div class="stat-label">Examen Parcial</div>
+              <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 8px;">
+                Prueba intermedia de control de aprendizaje. No eliminatoria.
+              </div>
+            </div>
+
+            <div class="card" style="border-top: 4px solid var(--color-border);">
+              <div class="stat-value">5%</div>
+              <div class="stat-label">Prácticas de Laboratorio</div>
+              <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 8px;">
+                Asistencia al 100% de las sesiones, cuaderno de parejas y examen de laboratorio.
+              </div>
+            </div>
+
+            <div class="card" style="border-top: 4px solid var(--color-border);">
+              <div class="stat-value">5%</div>
+              <div class="stat-label">Seminarios & Trabajos</div>
+              <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 8px;">
+                Resolución de casos clínicos, SAR y participación en sesiones dirigidas.
+              </div>
+            </div>
+          </div>
+
+          <!-- Calculadora Interactiva de Nota Final -->
+          <div class="card">
+            <div class="card-kicker">SIMULADOR DE CALIFICACIÓN FINAL</div>
+            <h2 class="card-title">Calcula tu Calificación Estimada</h2>
+            <p class="card-body" style="margin-bottom: 20px;">
+              Introduce tus calificaciones previstas en cada bloque para comprobar si superas el mínimo de 5,0 y tu nota final ponderada.
+            </p>
+
+            <div class="grid-4" style="margin-bottom: 24px;">
+              <div class="field">
+                <label>Examen Final (70%) [Mín. 5.0]</label>
+                <input type="number" min="0" max="10" step="0.1" class="input input-mono" id="eval-final" value="${ev.finalExam}" />
+              </div>
+              <div class="field">
+                <label>Examen Parcial (20%)</label>
+                <input type="number" min="0" max="10" step="0.1" class="input input-mono" id="eval-parcial" value="${ev.parcial}" />
+              </div>
+              <div class="field">
+                <label>Prácticas de Laboratorio (5%)</label>
+                <input type="number" min="0" max="10" step="0.1" class="input input-mono" id="eval-practicas" value="${ev.practicas}" />
+              </div>
+              <div class="field">
+                <label>Trabajos & Seminarios (5%)</label>
+                <input type="number" min="0" max="10" step="0.1" class="input input-mono" id="eval-seminarios" value="${ev.seminarios}" />
+              </div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-col">
+                <div class="stat-value" style="color: ${finalApproved ? (calculatedGrade >= 5 ? 'var(--color-success)' : 'var(--color-accent)') : 'var(--color-accent)'};">
+                  ${calculatedGrade.toFixed(2)}
+                </div>
+                <div class="stat-label">Calificación Final Estimada</div>
+              </div>
+              <div class="stat-col">
+                <div class="stat-value" style="font-size: 1.5rem; color: var(--color-text);">
+                  ${!finalApproved ? 'SUSPENSO (Examen Final < 5,0)' : calculatedGrade >= 9 ? 'SOBRESALIENTE' : calculatedGrade >= 7 ? 'NOTABLE' : calculatedGrade >= 5 ? 'APROBADO' : 'SUSPENSO'}
+                </div>
+                <div class="stat-label">Condición Académica</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // PANTALLA 9: GLOSARIO FARMACOLÓGICO
+    // ========================================================================
+    function renderGlosarioScreen() {
+      return `
+        <div class="container">
+          <div class="kicker">DICCIONARIO TÉCNICO DE LA ASIGNATURA</div>
+          <h1 style="margin-bottom: 8px;">Glosario Farmacológico & Químico</h1>
+          <p style="color: var(--color-text-secondary); max-width: 800px; margin-bottom: 24px;">
+            Conceptos clave de diseño de fármacos, parámetros fisicoquímicos y farmacóforos.
+          </p>
+
+          <div class="hr"></div>
+
+          <div class="grid-2">
+            ${GLOSSARY.map(g => `
+              <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                  <h3 style="font-size: 1.25rem;">${g.term}</h3>
+                  <span class="tag tag-accent">${g.category}</span>
+                </div>
+                <p style="font-size: 0.9rem; color: var(--color-text); margin-bottom: 12px; line-height: 1.5;">
+                  ${g.definition}
+                </p>
+                <div style="background: var(--color-bg); padding: 10px 12px; border-left: 3px solid var(--color-border); font-size: 0.82rem;">
+                  <strong>Relevancia clínica:</strong> ${g.clinicalRelevance}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // PANTALLA 10: ENLACES Y RECURSOS
+    // ========================================================================
+    function renderEnlacesScreen() {
+      return `
+        <div class="container">
+          <div class="kicker">RECURSOS CIENTÍFICOS & BASES DE DATOS</div>
+          <h1 style="margin-bottom: 8px;">Directorio de Enlaces de Interés</h1>
+          <p style="color: var(--color-text-secondary); max-width: 800px; margin-bottom: 24px;">
+            Servidores de estructuras 3D, bases de datos quimioinformáticas y enlaces oficiales UGR.
+          </p>
+
+          <div class="hr"></div>
+
+          <div class="grid-2">
+            ${RESOURCE_LINKS.map(l => `
+              <div class="card card-interactive" style="display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span class="tag tag-accent">${l.source || 'Recurso'}</span>
+                    <span class="tag tag-outline">${l.category}</span>
+                  </div>
+                  <h3 style="font-size: 1.2rem; margin-bottom: 6px;">${l.title}</h3>
+                  <p style="font-size: 0.88rem; color: var(--color-text-secondary); margin-bottom: 14px; line-height: 1.45;">
+                    ${l.summary}
+                  </p>
+                </div>
+                <div>
+                  <a href="${l.url}" target="_blank" rel="noreferrer" class="btn btn-secondary btn-block btn-sm">
+                    ACCEDER AL RECURSO ↗
+                  </a>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
+    // MODALES GLOBALES MODERNIST
+    // ========================================================================
+    function renderActiveModal() {
+      switch (state.activeModal) {
+        // --------------------------------------------------------------------
+        // MODAL 1: BUSCADOR DE FÁRMACOS & GLOBAL (⌘K)
+        // --------------------------------------------------------------------
+        case 'search':
+          const q = (state.modalData || '').toLowerCase().trim();
+          let results = [];
+          if (q) {
+            TOPICS.forEach(t => {
+              if (t.drugs) {
+                t.drugs.forEach(d => {
+                  if (d.name.toLowerCase().includes(q) || (d.role || '').toLowerCase().includes(q) || (d.formula || '').toLowerCase().includes(q)) {
+                    results.push({ type: 'Fármaco', title: d.name, subtitle: d.role, topicId: t.id, topicName: t.number });
+                  }
+                });
+              }
+              if (t.title.toLowerCase().includes(q) || (t.subtitle || '').toLowerCase().includes(q)) {
+                results.push({ type: 'Tema', title: t.title, subtitle: t.subtitle, topicId: t.id, topicName: t.number });
+              }
+            });
+          }
+
+          return `
+            <div class="dialog-backdrop" id="modal-backdrop">
+              <div class="dialog">
+                <div class="dialog-header">
+                  <h3>BUSCADOR FARMACOLÓGICO & GLOBAL</h3>
+                  <button class="btn btn-ghost btn-sm" id="btn-close-modal">✕ CERRAR</button>
+                </div>
+                <div class="dialog-body">
+                  <div class="field" style="margin-bottom: 20px;">
+                    <input type="text" class="input input-mono" id="modal-search-input" placeholder="Buscar por nombre de fármaco, mecanismo, tema..." value="${state.modalData || ''}" autofocus />
+                  </div>
+
+                  <div style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+                    ${!q ? `
+                      <div style="text-align: center; color: var(--color-text-muted); padding: 30px 0;">
+                        Escribe el nombre de un principio activo (ej. Propranolol, Salbutamol, Levodopa...) para ver su monografía.
+                      </div>
+                    ` : results.length === 0 ? `
+                      <div style="text-align: center; color: var(--color-text-muted); padding: 30px 0;">
+                        No se encontraron coincidencias para "${q}".
+                      </div>
+                    ` : results.map(r => `
+                      <div class="card card-interactive" data-search-nav="${r.topicId}" style="padding: 12px 16px; cursor: pointer;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                          <div>
+                            <span class="tag tag-accent" style="margin-right: 6px;">${r.type}</span>
+                            <strong style="font-size: 1.05rem;">${r.title}</strong>
+                            <div style="font-size: 0.8rem; color: var(--color-text-muted);">${r.subtitle}</div>
+                          </div>
+                          <span class="tag tag-outline">${r.topicName} ➔</span>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MODAL 2: BUZÓN DE CONSULTAS DE ESTUDIANTES
+        // --------------------------------------------------------------------
+        case 'question':
+          return `
+            <div class="dialog-backdrop" id="modal-backdrop">
+              <div class="dialog">
+                <div class="dialog-header">
+                  <h3>BUZÓN DE CONSULTAS DOCENTES</h3>
+                  <button class="btn btn-ghost btn-sm" id="btn-close-modal">✕</button>
+                </div>
+                <div class="dialog-body">
+                  <p style="font-size: 0.88rem; color: var(--color-text-secondary); margin-bottom: 16px;">
+                    Envía una consulta directamente al Dr. Juan José Díaz-Mochón o al profesorado de laboratorio.
+                  </p>
+
+                  <div class="field">
+                    <label>Unidad Temática o Bloque</label>
+                    <select class="select" id="question-topic-select">
+                      ${TOPICS.map(t => `<option value="${t.id}">${t.number}: ${t.title}</option>`).join('')}
+                      <option value="practicas">Prácticas de Laboratorio</option>
+                    </select>
+                  </div>
+
+                  <div class="field">
+                    <label>Título de la Consulta</label>
+                    <input type="text" class="input" id="question-title" placeholder="Ej. Duda con el mecanismo de apertura del oxirano" />
+                  </div>
+
+                  <div class="field">
+                    <label>Descripción Detallada</label>
+                    <textarea class="textarea" id="question-body" placeholder="Describe tu consulta con detalle..."></textarea>
+                  </div>
+                </div>
+                <div class="dialog-footer">
+                  <button class="btn btn-secondary" id="btn-close-modal-footer">CANCELAR</button>
+                  <button class="btn btn-primary" id="btn-send-question">ENVIAR CONSULTA</button>
+                </div>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MODAL 3: REPRODUCTOR PODCAST SPOTIFY
+        // --------------------------------------------------------------------
+        case 'spotify':
+          return `
+            <div class="dialog-backdrop" id="modal-backdrop">
+              <div class="dialog">
+                <div class="dialog-header">
+                  <h3>PODCAST DOCENTE QFDOS · PÍLDORAS DE AUDIO</h3>
+                  <button class="btn btn-ghost btn-sm" id="btn-close-modal">✕</button>
+                </div>
+                <div class="dialog-body">
+                  <p style="font-size: 0.88rem; color: var(--color-text-secondary); margin-bottom: 16px;">
+                    Píldoras sonoras oficiales de Química Farmacéutica II para el repaso autónomo de mecanismos y familias terapéuticas.
+                  </p>
+                  <div style="border: 2px solid var(--color-border); padding: 18px; background: #ffffff; margin-bottom: 16px;">
+                    <div class="tag tag-accent" style="margin-bottom: 6px;">EPISODIO OFICIAL</div>
+                    <h4>QFDOS Píldora 01: Del Bloqueo Adrenérgico al Sistema Renina</h4>
+                    <p style="font-size: 0.85rem; color: var(--color-text-secondary); margin-top: 6px;">
+                      Duración: 18 min · Locución docente y análisis de los farmacóforos clave.
+                    </p>
+                  </div>
+                  <a href="https://open.spotify.com" target="_blank" rel="noreferrer" class="btn btn-primary btn-block">
+                    ABRIR EN SPOTIFY WEB PLAYER ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MODAL 4: TEST INTERACTIVO DE AUTOEVALUACIÓN POR TEMA
+        // --------------------------------------------------------------------
+        case 'quiz':
+          const qTopic = TOPICS.find(t => t.id === state.selectedTopicId) || TOPICS[1];
+          const questions = qTopic.testQuestions || [];
+          const currQ = questions[state.activeQuizIndex];
+
+          return `
+            <div class="dialog-backdrop" id="modal-backdrop">
+              <div class="dialog">
+                <div class="dialog-header">
+                  <h3>TEST DE AUTOEVALUACIÓN · ${qTopic.number}</h3>
+                  <button class="btn btn-ghost btn-sm" id="btn-close-modal">✕</button>
+                </div>
+                <div class="dialog-body">
+                  ${questions.length === 0 ? `
+                    <div style="padding: 24px; text-align: center; color: var(--color-text-muted);">
+                      No hay preguntas de test disponibles para este tema introductorio.
+                    </div>
+                  ` : `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                      <span class="tag tag-accent">PREGUNTA ${state.activeQuizIndex + 1} DE ${questions.length}</span>
+                      <span class="tag tag-outline">${currQ.block || 'Farmacología'}</span>
+                    </div>
+
+                    <h3 style="font-size: 1.15rem; margin-bottom: 16px;">${currQ.question}</h3>
+
+                    <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                      ${currQ.options.map((opt, oIdx) => {
+                        const optText = typeof opt === 'string' ? opt : opt.text;
+                        const isSelected = state.quizAnswers[state.activeQuizIndex] === oIdx;
+                        return `
+                          <label style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 2px solid var(--color-border); cursor: pointer; background: ${isSelected ? 'var(--color-surface-dim)' : '#ffffff'};">
+                            <input type="radio" name="quiz-opt" value="${oIdx}" ${isSelected ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--color-accent);" />
+                            <span style="font-size: 0.92rem;">${optText}</span>
+                          </label>
+                        `;
+                      }).join('')}
+                    </div>
+
+                    ${state.quizSubmitted ? `
+                      <div style="background: var(--color-bg); padding: 14px; border-left: 4px solid var(--color-accent); font-size: 0.88rem;">
+                        <strong>Solución oficial:</strong> Opción ${currQ.correctIndex + 1}<br />
+                        ${currQ.explanation}
+                      </div>
+                    ` : ''}
+                  `}
+                </div>
+                <div class="dialog-footer">
+                  <div style="display: flex; justify-content: space-between; width: 100%;">
+                    <button class="btn btn-secondary btn-sm" id="btn-quiz-prev" ${state.activeQuizIndex === 0 ? 'disabled' : ''}>← ANTERIOR</button>
+                    <div style="display: flex; gap: 8px;">
+                      ${!state.quizSubmitted ? `
+                        <button class="btn btn-primary btn-sm" id="btn-quiz-check">COMPROBAR</button>
+                      ` : `
+                        <button class="btn btn-secondary btn-sm" id="btn-quiz-reset">REINTENTAR</button>
+                      `}
+                      <button class="btn btn-secondary btn-sm" id="btn-quiz-next" ${state.activeQuizIndex === questions.length - 1 ? 'disabled' : ''}>SIGUIENTE →</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MODAL 5: FLASHCARDS INTERACTIVAS DE REPASO
+        // --------------------------------------------------------------------
+        case 'flashcards':
+          const fcTopic = TOPICS.find(t => t.id === state.selectedTopicId) || TOPICS[1];
+          const cards = fcTopic.flashcards || [];
+          const currCard = cards[state.activeFlashcardIndex];
+
+          return `
+            <div class="dialog-backdrop" id="modal-backdrop">
+              <div class="dialog">
+                <div class="dialog-header">
+                  <h3>FLASHCARDS DE REPASO · ${fcTopic.number}</h3>
+                  <button class="btn btn-ghost btn-sm" id="btn-close-modal">✕</button>
+                </div>
+                <div class="dialog-body">
+                  ${cards.length === 0 ? `
+                    <div style="padding: 24px; text-align: center; color: var(--color-text-muted);">
+                      No hay flashcards para este tema.
+                    </div>
+                  ` : `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                      <span class="tag tag-accent">TARJETA ${state.activeFlashcardIndex + 1} DE ${cards.length}</span>
+                      <span class="tag tag-outline">${currCard.concept}</span>
+                    </div>
+
+                    <!-- Tarjeta interactiva con giro -->
+                    <div id="flashcard-box" style="border: 2px solid var(--color-border); background: #ffffff; min-height: 220px; padding: 32px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; cursor: pointer; margin-bottom: 20px;">
+                      <div class="kicker" style="margin-bottom: 8px;">
+                        ${state.flashcardFlipped ? 'REVERSO (RESPUESTA & MECANISMO)' : 'ANVERSO (PREGUNTA / CONCEPTO)'}
+                      </div>
+                      <div style="font-size: 1.25rem; font-weight: 700; line-height: 1.4;">
+                        ${state.flashcardFlipped ? currCard.back : currCard.front}
+                      </div>
+                      <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 16px;">
+                        [HAZ CLIC PARA DAR LA VUELTA]
+                      </div>
+                    </div>
+                  `}
+                </div>
+                <div class="dialog-footer">
+                  <div style="display: flex; justify-content: space-between; width: 100%;">
+                    <button class="btn btn-secondary btn-sm" id="btn-fc-prev" ${state.activeFlashcardIndex === 0 ? 'disabled' : ''}>← ANTERIOR</button>
+                    <button class="btn btn-primary btn-sm" id="btn-fc-flip">VOLTEAR TARJETA</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-fc-next" ${state.activeFlashcardIndex === cards.length - 1 ? 'disabled' : ''}>SIGUIENTE →</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+
+        // --------------------------------------------------------------------
+        // MODAL 6: SIMULADOR DE PREGUNTAS OFICIALES FIR
+        // --------------------------------------------------------------------
+        case 'fir':
+          const firTopicId = state.modalData || state.selectedTopicId;
+          const matchedFir = FIR_QUESTIONS.filter(q => !firTopicId || q.qfdosTopicId === firTopicId).slice(0, 10);
+
+          return `
+            <div class="dialog-backdrop" id="modal-backdrop">
+              <div class="dialog" style="max-width: 860px;">
+                <div class="dialog-header">
+                  <h3>PREGUNTAS OFICIALES FIR (MINISTERIO DE SANIDAD)</h3>
+                  <button class="btn btn-ghost btn-sm" id="btn-close-modal">✕</button>
+                </div>
+                <div class="dialog-body">
+                  <div style="margin-bottom: 16px;">
+                    <p style="font-size: 0.88rem; color: var(--color-text-secondary);">
+                      Banco de preguntas oficiales de convocatorias FIR (2020-2025) vinculadas a este módulo temático.
+                    </p>
+                  </div>
+
+                  <div style="display: flex; flex-direction: column; gap: 16px; max-height: 480px; overflow-y: auto;">
+                    ${matchedFir.map((q, idx) => `
+                      <div style="border: 2px solid var(--color-border); padding: 16px; background: #ffffff;">
+                        <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+                          <span class="tag tag-accent">${q.badge}</span>
+                          <span class="tag tag-outline">${q.block}</span>
+                        </div>
+                        <div style="font-weight: 800; font-size: 0.98rem; margin-bottom: 10px;">${q.question}</div>
+                        <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;">
+                          ${q.options.map((opt, oIdx) => `
+                            <div style="padding: 6px 10px; font-size: 0.85rem; border: 1px solid var(--color-border-subtle); background: ${oIdx === q.correctIndex ? '#dcfce7' : '#ffffff'};">
+                              ${oIdx === q.correctIndex ? '<strong>✓ ' + opt + '</strong>' : opt}
+                            </div>
+                          `).join('')}
+                        </div>
+                        <div style="font-size: 0.8rem; color: var(--color-text-muted); background: var(--color-bg); padding: 8px 10px; border-left: 2px solid var(--color-border);">
+                          ${q.explanation}
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+
+        default:
+          return '';
+      }
+    }
+
+    // ========================================================================
+    // GESTIÓN DE EVENTOS & INTERACTIVIDAD
+    // ========================================================================
+    function attachEventListeners() {
+      // Login buttons
+      const btnGoogle = document.getElementById('btn-login-google');
+      if (btnGoogle) {
+        btnGoogle.onclick = () => {
+          state.user = { role: 'estudiante', name: 'Estudiante UGR', email: 'alumno@correo.ugr.es' };
+          localStorage.setItem('qfdos_v4_user', JSON.stringify(state.user));
+          state.screen = 'hub';
+          render();
+        };
+      }
+
+      const btnGuest = document.getElementById('btn-login-guest');
+      if (btnGuest) {
+        btnGuest.onclick = () => {
+          state.user = { role: 'invitado', name: 'Usuario Invitado', email: 'invitado@ugr.es' };
+          localStorage.setItem('qfdos_v4_user', JSON.stringify(state.user));
+          state.screen = 'hub';
+          render();
+        };
+      }
+
+      const btnTeacher = document.getElementById('btn-login-teacher');
+      if (btnTeacher) {
+        btnTeacher.onclick = () => {
+          state.user = { role: 'profesor', name: 'Dr. Juan José Díaz-Mochón', email: 'juandiaz@go.ugr.es' };
+          localStorage.setItem('qfdos_v4_user', JSON.stringify(state.user));
+          state.screen = 'hub';
+          render();
+        };
+      }
+
+      // Logout
+      const btnLogout = document.getElementById('btn-logout');
+      if (btnLogout) {
+        btnLogout.onclick = () => {
+          localStorage.removeItem('qfdos_v4_user');
+          state.screen = 'login';
+          render();
+        };
+      }
+
+      // Brand link -> Hub
+      const brandLink = document.getElementById('brand-link');
+      if (brandLink) {
+        brandLink.onclick = () => { state.screen = 'hub'; render(); };
+      }
+
+      // Navigation Links
+      document.querySelectorAll('[data-nav]').forEach(el => {
+        el.onclick = () => {
+          state.screen = el.getAttribute('data-nav');
+          window.scrollTo(0, 0);
+          render();
+        };
+      });
+
+      // Abrir detalle de tema
+      document.querySelectorAll('[data-open-topic]').forEach(el => {
+        el.onclick = () => {
+          state.selectedTopicId = el.getAttribute('data-open-topic');
+          state.screen = 'topic';
+          window.scrollTo(0, 0);
+          render();
+        };
+      });
+
+      // Modales Triggers
+      const btnSearch = document.getElementById('btn-trigger-search');
+      if (btnSearch) btnSearch.onclick = () => { state.activeModal = 'search'; state.modalData = ''; render(); };
+
+      const mobileSearch = document.getElementById('mobile-btn-search');
+      if (mobileSearch) mobileSearch.onclick = () => { state.activeModal = 'search'; state.modalData = ''; render(); };
+
+      const cardSearch = document.getElementById('card-quick-search');
+      if (cardSearch) cardSearch.onclick = () => { state.activeModal = 'search'; state.modalData = ''; render(); };
+
+      const btnPodcast = document.getElementById('btn-trigger-podcast');
+      if (btnPodcast) btnPodcast.onclick = () => { state.activeModal = 'spotify'; render(); };
+
+      const cardQuestion = document.getElementById('card-quick-question');
+      if (cardQuestion) cardQuestion.onclick = () => { state.activeModal = 'question'; render(); };
+
+      const btnHeroFir = document.getElementById('btn-hero-fir');
+      if (btnHeroFir) btnHeroFir.onclick = () => { state.activeModal = 'fir'; state.modalData = null; render(); };
+
+      // Cerrar modales
+      const btnCloseModal = document.getElementById('btn-close-modal');
+      if (btnCloseModal) btnCloseModal.onclick = () => { state.activeModal = null; render(); };
+
+      const btnCloseFooter = document.getElementById('btn-close-modal-footer');
+      if (btnCloseFooter) btnCloseFooter.onclick = () => { state.activeModal = null; render(); };
+
+      const modalBackdrop = document.getElementById('modal-backdrop');
+      if (modalBackdrop) {
+        modalBackdrop.onclick = (e) => {
+          if (e.target === modalBackdrop) {
+            state.activeModal = null;
+            render();
+          }
+        };
+      }
+
+      // Atajo de teclado ⌘K / Ctrl+K
+      window.onkeydown = (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          state.activeModal = state.activeModal === 'search' ? null : 'search';
+          state.modalData = '';
+          render();
+        } else if (e.key === 'Escape' && state.activeModal) {
+          state.activeModal = null;
+          render();
+        }
+      };
+
+      // Búsqueda en modal
+      const modalSearchInput = document.getElementById('modal-search-input');
+      if (modalSearchInput) {
+        modalSearchInput.oninput = (e) => {
+          state.modalData = e.target.value;
+          render();
+          const newInput = document.getElementById('modal-search-input');
+          if (newInput) {
+            newInput.focus();
+            newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+          }
+        };
+      }
+
+      // Navegar desde resultado de búsqueda
+      document.querySelectorAll('[data-search-nav]').forEach(el => {
+        el.onclick = () => {
+          state.selectedTopicId = el.getAttribute('data-search-nav');
+          state.screen = 'topic';
+          state.activeModal = null;
+          render();
+        };
+      });
+
+      // Filtro de temario
+      const temarioFilter = document.getElementById('input-temario-filter');
+      if (temarioFilter) {
+        temarioFilter.oninput = (e) => {
+          state.searchTerm = e.target.value;
+          render();
+          const newF = document.getElementById('input-temario-filter');
+          if (newF) {
+            newF.focus();
+            newF.setSelectionRange(newF.value.length, newF.value.length);
+          }
+        };
+      }
+
+      // Botones didácticos de Topic
+      const btnTopicQuiz = document.getElementById('btn-topic-quiz');
+      if (btnTopicQuiz) {
+        btnTopicQuiz.onclick = () => {
+          state.activeQuizIndex = 0;
+          state.quizAnswers = {};
+          state.quizSubmitted = false;
+          state.activeModal = 'quiz';
+          render();
+        };
+      }
+
+      const btnTopicFlashcards = document.getElementById('btn-topic-flashcards');
+      if (btnTopicFlashcards) {
+        btnTopicFlashcards.onclick = () => {
+          state.activeFlashcardIndex = 0;
+          state.flashcardFlipped = false;
+          state.activeModal = 'flashcards';
+          render();
+        };
+      }
+
+      const btnTopicFir = document.getElementById('btn-topic-fir');
+      if (btnTopicFir) {
+        btnTopicFir.onclick = () => {
+          state.modalData = state.selectedTopicId;
+          state.activeModal = 'fir';
+          render();
+        };
+      }
+
+      // Pestañas de Prácticas
+      document.querySelectorAll('[data-ptab]').forEach(el => {
+        el.onclick = () => {
+          state.practicasTab = el.getAttribute('data-ptab');
+          render();
+        };
+      });
+
+      // Firma digital de seguridad (Módulo 00)
+      const btnSignSafety = document.getElementById('btn-sign-safety');
+      if (btnSignSafety) {
+        btnSignSafety.onclick = () => {
+          const sName = (document.getElementById('input-sign-name') || {}).value;
+          const sEmail = (document.getElementById('input-sign-email') || {}).value;
+          if (sName) state.user.name = sName;
+          if (sEmail) state.user.email = sEmail;
+          state.safetySigned = true;
+          localStorage.setItem('qfdos_v4_safety_signed', 'true');
+          render();
+        };
+      }
+
+      const btnRevokeSafety = document.getElementById('btn-revoke-safety');
+      if (btnRevokeSafety) {
+        btnRevokeSafety.onclick = () => {
+          state.safetySigned = false;
+          localStorage.setItem('qfdos_v4_safety_signed', 'false');
+          render();
+        };
+      }
+
+      // Presets de Calculadora de Rendimientos (Módulo 02)
+      const presetProp = document.getElementById('preset-prop');
+      if (presetProp) {
+        presetProp.onclick = () => {
+          state.yieldCalc = { preset: 'propranolol', massA: 1.44, mwA: 144.17, massB: 1.85, mwB: 92.52, mwProd: 200.24, massProd: 1.62 };
+          render();
+        };
+      }
+
+      const presetDhpp = document.getElementById('preset-dhpp');
+      if (presetDhpp) {
+        presetDhpp.onclick = () => {
+          state.yieldCalc = { preset: 'dhpp', massA: 1.06, mwA: 106.12, massB: 2.32, mwB: 116.12, mwProd: 301.34, massProd: 2.45 };
+          render();
+        };
+      }
+
+      const presetPara = document.getElementById('preset-paracetamol');
+      if (presetPara) {
+        presetPara.onclick = () => {
+          state.yieldCalc = { preset: 'paracetamol', massA: 1.09, mwA: 109.13, massB: 1.20, mwB: 102.09, mwProd: 151.16, massProd: 1.25 };
+          render();
+        };
+      }
+
+      // Inputs numéricos de rendimiento
+      ['massA', 'mwA', 'massB', 'mwB', 'mwProd', 'massProd'].forEach(f => {
+        const inp = document.getElementById('yield-' + f);
+        if (inp) {
+          inp.oninput = (e) => {
+            state.yieldCalc[f] = parseFloat(e.target.value) || 0;
+            render();
+          };
+        }
+      });
+
+      // Calculadora de Disoluciones (Módulo 03)
+      const solTarget = document.getElementById('sol-target');
+      if (solTarget) {
+        solTarget.onchange = (e) => {
+          state.solutionCalc.target = e.target.value;
+          render();
+        };
+      }
+
+      ['c1', 'v1', 'c2', 'v2'].forEach(f => {
+        const inp = document.getElementById('sol-' + f);
+        if (inp) {
+          inp.oninput = (e) => {
+            state.solutionCalc[f] = parseFloat(e.target.value) || 0;
+            render();
+          };
+        }
+      });
+
+      // Taller de Espectroscopia (Módulo 04)
+      const btnCheckSpectro = document.getElementById('btn-check-spectro');
+      if (btnCheckSpectro) {
+        btnCheckSpectro.onclick = () => {
+          state.spectroAssignments.forEach((row, i) => {
+            const input = document.getElementById(`spectro-row-${i}`);
+            if (input) row.proposed = input.value;
+            row.checked = true;
+          });
+          render();
+        };
+      }
+
+      const btnResetSpectro = document.getElementById('btn-reset-spectro');
+      if (btnResetSpectro) {
+        btnResetSpectro.onclick = () => {
+          state.spectroAssignments.forEach(row => { row.checked = false; });
+          render();
+        };
+      }
+
+      // Checklist de Equipamiento (Módulo 05)
+      document.querySelectorAll('.equip-checkbox').forEach(cb => {
+        cb.onchange = (e) => {
+          const eqId = e.target.getAttribute('data-eq-id');
+          state.equipmentChecked[eqId] = e.target.checked;
+          localStorage.setItem('qfdos_v4_equipment', JSON.stringify(state.equipmentChecked));
+          render();
+        };
+      });
+
+      // Simulador de Examen de Laboratorio (Módulo 06)
+      examRadioListeners();
+
+      const btnSubmitLabExam = document.getElementById('btn-submit-lab-exam');
+      if (btnSubmitLabExam) {
+        btnSubmitLabExam.onclick = () => {
+          state.labExamSubmitted = true;
+          render();
+        };
+      }
+
+      const btnRetryLabExam = document.getElementById('btn-retry-lab-exam');
+      if (btnRetryLabExam) {
+        btnRetryLabExam.onclick = () => {
+          state.labExamSubmitted = false;
+          state.labExamAnswers = {};
+          render();
+        };
+      }
+
+      // Guardar Cuaderno de Parejas (Módulo 07)
+      const btnSaveReport = document.getElementById('btn-save-pair-report');
+      if (btnSaveReport) {
+        btnSaveReport.onclick = () => {
+          state.pairReport.pairNumber = (document.getElementById('rep-pair') || {}).value;
+          state.pairReport.sessionDate = (document.getElementById('rep-date') || {}).value;
+          state.pairReport.student1 = (document.getElementById('rep-student1') || {}).value;
+          state.pairReport.student2 = (document.getElementById('rep-student2') || {}).value;
+          state.pairReport.synthesisTitle = (document.getElementById('rep-title') || {}).value;
+          state.pairReport.lotNumber = (document.getElementById('rep-lot') || {}).value;
+          state.pairReport.obtainedMass = (document.getElementById('rep-mass') || {}).value;
+          state.pairReport.meltingPoint = (document.getElementById('rep-mp') || {}).value;
+          state.pairReport.observations = (document.getElementById('rep-obs') || {}).value;
+          state.pairReport.submitted = true;
+          localStorage.setItem('qfdos_v4_pair_report', JSON.stringify(state.pairReport));
+          render();
+        };
+      }
+
+      const btnPrintReport = document.getElementById('btn-print-pair-report');
+      if (btnPrintReport) {
+        btnPrintReport.onclick = () => { window.print(); };
+      }
+
+      // Simulador de Afinidad
+      const simKd = document.getElementById('sim-kd');
+      if (simKd) simKd.oninput = (e) => { state.affinitySim.kd = parseFloat(e.target.value); render(); };
+
+      const simConc = document.getElementById('sim-conc');
+      if (simConc) simConc.oninput = (e) => { state.affinitySim.ligandConc = parseFloat(e.target.value); render(); };
+
+      const simBmax = document.getElementById('sim-bmax');
+      if (simBmax) simBmax.oninput = (e) => { state.affinitySim.bmax = parseFloat(e.target.value); render(); };
+
+      // Simulador de Evaluación Continua
+      ['final', 'parcial', 'practicas', 'seminarios'].forEach(f => {
+        const inp = document.getElementById('eval-' + f);
+        if (inp) {
+          inp.oninput = (e) => {
+            const val = parseFloat(e.target.value) || 0;
+            if (f === 'final') state.evalCalc.finalExam = val;
+            if (f === 'parcial') state.evalCalc.parcial = val;
+            if (f === 'practicas') state.evalCalc.practicas = val;
+            if (f === 'seminarios') state.evalCalc.seminarios = val;
+            render();
+          };
+        }
+      });
+
+      // Envío de consulta
+      const btnSendQ = document.getElementById('btn-send-question');
+      if (btnSendQ) {
+        btnSendQ.onclick = () => {
+          alert('Tu consulta ha sido registrada y enviada al profesorado. Recibirás respuesta en tu correo universitario.');
+          state.activeModal = null;
+          render();
+        };
+      }
+
+      // Controles de Quiz Modal
+      quizModalListeners();
+
+      // Controles de Flashcard Modal
+      flashcardModalListeners();
+    }
+
+    function examRadioListeners() {
+      for (let i = 0; i < 5; i++) {
+        document.querySelectorAll(`input[name="lab-exam-q-${i}"]`).forEach(radio => {
+          radio.onchange = (e) => {
+            state.labExamAnswers[i] = parseInt(e.target.value);
+          };
+        });
+      }
+    }
+
+    function quizModalListeners() {
+      document.querySelectorAll('input[name="quiz-opt"]').forEach(r => {
+        r.onchange = (e) => {
+          state.quizAnswers[state.activeQuizIndex] = parseInt(e.target.value);
+        };
+      });
+
+      const btnCheck = document.getElementById('btn-quiz-check');
+      if (btnCheck) btnCheck.onclick = () => { state.quizSubmitted = true; render(); };
+
+      const btnReset = document.getElementById('btn-quiz-reset');
+      if (btnReset) btnReset.onclick = () => { state.quizSubmitted = false; render(); };
+
+      const btnPrev = document.getElementById('btn-quiz-prev');
+      if (btnPrev) {
+        btnPrev.onclick = () => {
+          if (state.activeQuizIndex > 0) {
+            state.activeQuizIndex--;
+            state.quizSubmitted = false;
+            render();
+          }
+        };
+      }
+
+      const btnNext = document.getElementById('btn-quiz-next');
+      if (btnNext) {
+        btnNext.onclick = () => {
+          state.activeQuizIndex++;
+          state.quizSubmitted = false;
+          render();
+        };
+      }
+    }
+
+    function flashcardModalListeners() {
+      const box = document.getElementById('flashcard-box');
+      if (box) box.onclick = () => { state.flashcardFlipped = !state.flashcardFlipped; render(); };
+
+      const btnFlip = document.getElementById('btn-fc-flip');
+      if (btnFlip) btnFlip.onclick = () => { state.flashcardFlipped = !state.flashcardFlipped; render(); };
+
+      const btnPrev = document.getElementById('btn-fc-prev');
+      if (btnPrev) {
+        btnPrev.onclick = () => {
+          if (state.activeFlashcardIndex > 0) {
+            state.activeFlashcardIndex--;
+            state.flashcardFlipped = false;
+            render();
+          }
+        };
+      }
+
+      const btnNext = document.getElementById('btn-fc-next');
+      if (btnNext) {
+        btnNext.onclick = () => {
+          state.activeFlashcardIndex++;
+          state.flashcardFlipped = false;
+          render();
+        };
+      }
+    }
+
+    // Cargar estructuras 2D de moléculas de forma asíncrona
+    async function loadMoleculesSvgAsync() {
+      const containers = document.querySelectorAll('.chem-svg-container');
+      for (const el of containers) {
+        const smiles = el.getAttribute('data-smiles');
+        if (smiles) {
+          const svg = await renderMoleculeSvg(smiles, 260, 150);
+          if (svg) el.innerHTML = svg;
+        }
+      }
+    }
+
+    // Arranque inicial
+    initRDKit();
+    render();
+  </script>
+</body>
+</html>

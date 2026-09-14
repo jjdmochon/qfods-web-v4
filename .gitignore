@@ -1,0 +1,22 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+node_modules
+node_modules_backup
+dist
+dist-ssr
+*.local
+desktop.ini
+
+# Secrets & Environment variables
+.env.local
+.env.*.local
+client_secret_*.json
+.claude
+
+# Media
+*.mp4
+!public/video-*.mp4
+!docs/video-*.mp4
