@@ -755,4 +755,156 @@ h4 { font-size: 1.1rem; }
   align-items: center;
   justify-content: center;
   min-height: 140px;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 0.2s ease;
 }
+
+.chem-svg-container:hover {
+  border-color: var(--color-accent);
+}
+
+.chem-svg-container svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Chemical Card Action Bar & Micro-Buttons */
+.chem-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.btn-xs {
+  font-size: 0.70rem;
+  padding: 4px 8px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.chem-badge-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: #f0fdf4;
+  color: #166534;
+  border: 1px solid #166534;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.chem-badge-fail {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #dc2626;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.chem-badge-neutral {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--color-surface-dim);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+
+/* Reaction Scheme Container */
+.chem-reaction-container {
+  background-color: #ffffff;
+  border: 2px solid var(--color-border);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  overflow-x: auto;
+  margin: 16px 0;
+}
+
+.chem-reaction-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Chemical Lab Workbench & Scorecards */
+.chem-workbench-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .chem-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chem-descriptor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+
+@media (max-width: 600px) {
+  .chem-descriptor-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.chem-descriptor-tile {
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
+  padding: 10px 12px;
+}
+
+.chem-descriptor-tile .label {
+  font-family: var(--font-sans);
+  font-size: 0.70rem;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.chem-descriptor-tile .val {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--color-text);
+  margin-top: 2px;
+}
+
+/* Tanimoto Similarity Meter */
+.tanimoto-meter-bg {
+  width: 100%;
+  height: 12px;
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-border);
+  position: relative;
+  overflow: hidden;
+}
+
+.tanimoto-meter-fill {
+  height: 100%;
+  background-color: var(--color-accent);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+

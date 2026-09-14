@@ -385,3 +385,26 @@ export function evaluateLipinskiVeber(data: PubChemCompoundData): LipinskiVeberR
     isVeberCompliant: veberViolations === 0
   };
 }
+
+/**
+ * Enlace directo al visor 3D del confórmero en PubChem
+ */
+export function getPubChem3DConformerUrl(cid: number | string): string {
+  return `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}#section=3D-Conformer`;
+}
+
+/**
+ * Enlace directo a PubChem
+ */
+export const getPubChemUrl = getPubChemWebUrl;
+
+/**
+ * Enlace interactivo en MolView
+ */
+export function getMolViewUrl(smiles: string): string {
+  return `https://molview.org/?smiles=${encodeURIComponent((smiles || '').trim())}`;
+}
+
+// Aliases para máxima compatibilidad con pubchemService.js
+export const fetchCompoundDescription = fetchPubChemDescription;
+export const fetchCompoundSynonyms = fetchPubChemSynonyms;

@@ -26,7 +26,28 @@
 
   <!-- Aplicación SPA Modernist -->
   <script type="module">
-    import { initRDKit, renderMoleculeSvg } from './src/utils/chemSvg.js';
+    import {
+      initRDKit,
+      renderMoleculeSvg,
+      renderReactionSvg,
+      computeDescriptors,
+      evaluateLipinskiVeber,
+      calculateTanimoto,
+      COMMON_PHARMACOPHORES,
+      getPharmacophoreForDrug
+    } from './src/utils/rdkitEngine.js';
+    import {
+      searchPubChemByName,
+      searchPubChemBySmiles,
+      searchPubChemByCid,
+      fetchPubChemAutocomplete,
+      fetchCompoundDescription,
+      fetchCompoundSynonyms,
+      getPubChem2DImageUrl,
+      getPubChem3DConformerUrl,
+      getMolViewUrl,
+      getPubChemUrl
+    } from './src/utils/pubchemService.js';
 
     // Obtener datos maestros cargados desde el bundle
     const DATA = window.QFDOS_DATA || {};
@@ -124,7 +145,33 @@
       quizAnswers: {},
       quizSubmitted: false,
       activeFlashcardIndex: 0,
-      flashcardFlipped: false
+      flashcardFlipped: false,
+
+      // Estado de Laboratorio Químico & Estructuras
+      chemLab: {
+        activeDrugName: 'Propranolol',
+        activeSmiles: 'CC(C)NCC(O)COc1cccc2ccccc12',
+        activeCid: 4946,
+        highlightSmarts: '[#6]~[#6]-[#8]-[#6]-[#6](-[#8])-[#6]-[#7]', // Ariloxipropanolamina
+        highlightActive: false,
+        bondWidth: 2.0,
+        showStereo: true,
+        descriptors: null,
+        lipinskiReport: null,
+        pubchemData: null,
+        pubchemDescription: null,
+        pubchemSynonyms: [],
+        loadingPubChem: false,
+        searchQuery: 'Propranolol',
+        // Comparador Molecular (Tanimoto / Morgan Fingerprints)
+        compareNameA: 'Propranolol',
+        compareSmilesA: 'CC(C)NCC(O)COc1cccc2ccccc12',
+        compareNameB: 'Atenolol',
+        compareSmilesB: 'CC(C)NCC(O)COc1ccc(CC(N)=O)cc1',
+        similarityResult: null
+      },
+      // Topic cards highlighted pharmacophore toggles
+      activePharmacophoreToggles: {}
     };
 
     // Render principal
@@ -234,6 +281,7 @@
               <span class="nav-link ${state.screen === 'curso' ? 'active' : ''}" data-nav="curso">CURSO</span>
               <span class="nav-link ${state.screen === 'temario' || state.screen === 'topic' ? 'active' : ''}" data-nav="temario">TEMARIO</span>
               <span class="nav-link ${state.screen === 'practicas' ? 'active' : ''}" data-nav="practicas">PRÁCTICAS</span>
+              <span class="nav-link ${state.screen === 'estructuras' ? 'active' : ''}" data-nav="estructuras">ESTRUCTURAS [LAB]</span>
               <span class="nav-link ${state.screen === 'simulador' ? 'active' : ''}" data-nav="simulador">AFINIDAD</span>
               <span class="nav-link ${state.screen === 'evaluacion' ? 'active' : ''}" data-nav="evaluacion">EVALUACIÓN</span>
               <span class="nav-link ${state.screen === 'glosario' ? 'active' : ''}" data-nav="glosario">GLOSARIO</span>
@@ -261,8 +309,8 @@
         <div class="mobile-nav-bottom">
           <span class="nav-link ${state.screen === 'hub' ? 'active' : ''}" data-nav="hub">HUB</span>
           <span class="nav-link ${state.screen === 'temario' || state.screen === 'topic' ? 'active' : ''}" data-nav="temario">TEMAS</span>
+          <span class="nav-link ${state.screen === 'estructuras' ? 'active' : ''}" data-nav="estructuras">MOL</span>
           <span class="nav-link ${state.screen === 'practicas' ? 'active' : ''}" data-nav="practicas">LAB</span>
-          <span class="nav-link ${state.screen === 'curso' ? 'active' : ''}" data-nav="curso">GUÍA</span>
           <span class="nav-link" id="mobile-btn-search">BUSCAR</span>
         </div>
       `;
@@ -277,6 +325,7 @@
         case 'curso': return renderCursoScreen();
         case 'temario': return renderTemarioScreen();
         case 'topic': return renderTopicScreen();
+        case 'estructuras': return renderEstructurasScreen();
         case 'practicas': return renderPracticasScreen();
         case 'simulador': return renderSimuladorScreen();
         case 'evaluacion': return renderEvaluacionScreen();
@@ -398,7 +447,8 @@
                 <p style="font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 12px;">
                   Calcula afinidades ligando-receptor (ecuación de Hill) y verifica reglas de Lipinski y Veber para candidatos clínicos.
                 </p>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="btn btn-primary btn-sm" data-nav="estructuras">LABORATORIO QUÍMICO [RDKIT]</button>
                   <button class="btn btn-secondary btn-sm" data-nav="simulador">SIMULADOR DE AFINIDAD</button>
                   <button class="btn btn-secondary btn-sm" data-nav="evaluacion">CALCULADORA DE NOTA</button>
                 </div>
@@ -710,40 +760,93 @@
               </div>
             ` : `
               <div class="grid-2">
-                ${topic.drugs.map((d, idx) => `
-                  <div class="card" style="padding: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                      <div>
-                        <h3 style="font-size: 1.2rem; margin-bottom: 2px;">${d.name}</h3>
-                        <span class="tag tag-accent" style="font-size: 0.68rem;">${d.role}</span>
+                ${topic.drugs.map((d, idx) => {
+                  const cardId = `${topic.id}-${idx}`;
+                  const isPharmaActive = Boolean(state.activePharmacophoreToggles[cardId]);
+                  const pharmaInfo = getPharmacophoreForDrug(d.name, d.smiles);
+
+                  // Evaluación preliminar de Lipinski & Veber
+                  const mwOk = !d.mw || d.mw <= 500;
+                  const logpOk = d.logP === undefined || d.logP <= 5.0;
+                  const hbdOk = d.hbd === undefined || d.hbd <= 5;
+                  const hbaOk = d.hba === undefined || d.hba <= 10;
+                  let violations = 0;
+                  if (!mwOk) violations++;
+                  if (!logpOk) violations++;
+                  if (!hbdOk) violations++;
+                  if (!hbaOk) violations++;
+                  const ro5Passed = violations <= 1;
+
+                  const rotbOk = d.rotBonds === undefined || d.rotBonds <= 10;
+                  const tpsaOk = d.tpsa === undefined || d.tpsa <= 140;
+                  const veberPassed = rotbOk && tpsaOk;
+
+                  return `
+                    <div class="card" style="padding: 20px; border: 2px solid var(--color-border); position: relative;">
+                      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div>
+                          <h3 style="font-size: 1.25rem; margin-bottom: 3px; font-weight: 800;">${d.name}</h3>
+                          <span class="tag tag-accent" style="font-size: 0.68rem;">${d.role}</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                          ${d.formula ? `<span class="tag tag-mono" style="font-weight: 700;">${d.formula}</span>` : ''}
+                          ${d.pdbId ? `<a href="https://www.rcsb.org/structure/${d.pdbId}" target="_blank" rel="noreferrer" class="tag tag-outline tag-mono" style="text-decoration:none; font-size:0.65rem;">PDB: ${d.pdbId} ↗</a>` : ''}
+                        </div>
                       </div>
-                      ${d.formula ? `<span class="tag tag-mono">${d.formula}</span>` : ''}
-                    </div>
 
-                    <!-- Visualizador 2D Vectorial de Estructura Química -->
-                    <div class="chem-svg-container" id="chem-slot-${topic.id}-${idx}" data-smiles="${d.smiles}" style="margin: 12px 0;">
-                      <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Generando estructura 2D...</div>
-                    </div>
+                      <!-- Visualizador 2D Vectorial de Estructura Química con RDKit WASM -->
+                      <div class="chem-svg-container" id="chem-slot-${topic.id}-${idx}" data-smiles="${d.smiles}" data-drug="${d.name}" data-card-id="${cardId}" style="margin: 12px 0;">
+                        <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Generando estructura 2D RDKit...</div>
+                      </div>
 
-                    <!-- Tabla de Propiedades Moleculares -->
-                    <div class="table-container" style="margin: 8px 0; border: 1px solid var(--color-border-subtle);">
-                      <table class="table" style="font-size: 0.78rem;">
-                        <tr>
-                          <th>MW</th><td>${d.mw ? d.mw + ' Da' : '—'}</td>
-                          <th>LogP</th><td>${d.logP !== undefined ? d.logP : '—'}</td>
-                        </tr>
-                        <tr>
-                          <th>HBD</th><td>${d.hbd !== undefined ? d.hbd : '—'}</td>
-                          <th>HBA</th><td>${d.hba !== undefined ? d.hba : '—'}</td>
-                        </tr>
-                      </table>
-                    </div>
+                      <!-- Barra de Acciones Químicas -->
+                      <div class="chem-card-actions">
+                        <button class="btn ${isPharmaActive ? 'btn-primary' : 'btn-secondary'} btn-xs" data-toggle-pharma="${cardId}" title="Resaltar farmacóforo característico en rojo moderno (#ec3013)">
+                          ${isPharmaActive ? '✓ FARMACÓFORO ACTIVO' : '⚡ RESALTAR FARMACÓFORO'}
+                        </button>
+                        <button class="btn btn-secondary btn-xs" data-copy-smiles="${d.smiles}" title="Copiar cadena SMILES al portapapeles">
+                          📋 SMILES
+                        </button>
+                        <button class="btn btn-secondary btn-xs" data-molview-smiles="${d.smiles}" title="Abrir conformador 3D interactivo en MolView">
+                          🧊 VER 3D ↗
+                        </button>
+                        <button class="btn btn-secondary btn-xs" data-pubchem-drug="${d.name}" title="Consultar monografía oficial en NCBI PubChem">
+                          🔬 PUBCHEM ↗
+                        </button>
+                        <button class="btn btn-dark btn-xs" data-open-chem-lab="${d.name}" data-smiles="${d.smiles}" title="Cargar este fármaco en el Laboratorio Molecular QFDOS">
+                          🧪 LAB [RDKIT] ➔
+                        </button>
+                      </div>
 
-                    <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-muted); word-break: break-all; margin-top: 6px;">
-                      SMILES: ${d.smiles}
+                      ${isPharmaActive && pharmaInfo ? `
+                        <div style="background: var(--color-surface-dim); border-left: 3px solid var(--color-accent); padding: 8px 10px; margin-bottom: 10px; font-size: 0.76rem;">
+                          <strong style="color: var(--color-accent);">${pharmaInfo.name}:</strong> ${pharmaInfo.description || 'Subestructura farmacofórica resaltada en Modernist Red.'}
+                          <div class="mono" style="font-size: 0.68rem; color: var(--color-text-muted); margin-top: 2px;">SMARTS: ${pharmaInfo.smarts}</div>
+                        </div>
+                      ` : ''}
+
+                      <!-- Tira de Descriptores Fisicoquímicos y Reglas Biofísicas -->
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
+                        <span class="${ro5Passed ? 'chem-badge-ok' : 'chem-badge-fail'}" title="Regla de 5 de Lipinski para absorción oral">
+                          ${ro5Passed ? '✓ LIPINSKI OK' : `✕ LIPINSKI: ${violations} VIOL.`}
+                        </span>
+                        <span class="${veberPassed ? 'chem-badge-ok' : 'chem-badge-fail'}" title="Criterios de Veber: RotB ≤ 10 y TPSA ≤ 140 Å²">
+                          ${veberPassed ? '✓ VEBER OK' : '✕ VEBER EXCEDIDO'}
+                        </span>
+                        <span class="chem-badge-neutral">MW: ${d.mw ? d.mw + ' Da' : '—'}</span>
+                        <span class="chem-badge-neutral">cLogP: ${d.logP !== undefined ? d.logP : '—'}</span>
+                        <span class="chem-badge-neutral">HBD: ${d.hbd !== undefined ? d.hbd : '—'}</span>
+                        <span class="chem-badge-neutral">HBA: ${d.hba !== undefined ? d.hba : '—'}</span>
+                        ${d.tpsa ? `<span class="chem-badge-neutral">TPSA: ${d.tpsa} Å²</span>` : ''}
+                        ${d.rotBonds !== undefined ? `<span class="chem-badge-neutral">RotB: ${d.rotBonds}</span>` : ''}
+                      </div>
+
+                      <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-muted); word-break: break-all; margin-top: 6px;">
+                        SMILES: ${d.smiles}
+                      </div>
                     </div>
-                  </div>
-                `).join('')}
+                  `;
+                }).join('')}
               </div>
             `}
           </div>
@@ -873,16 +976,33 @@
               <div class="card-kicker">MÓDULO 01 · TÉCNICA EXPERIMENTAL</div>
               <h2 class="card-title">Protocolos Detallados de Síntesis Farmacéutica</h2>
               <p class="card-body" style="margin-bottom: 20px;">
-                Procedimientos experimentales para la síntesis de fármacos cardiovasculares y analgésicos.
+                Procedimientos experimentales para la síntesis de fármacos cardiovasculares y analgésicos con esquemas de reacción 2D vectoriales RDKit MinimalLib.
               </p>
 
-              <div style="display: flex; flex-direction: column; gap: 24px;">
+              <div style="display: flex; flex-direction: column; gap: 28px;">
                 <!-- Reacción 1: Propranolol -->
                 <div style="border: 2px solid var(--color-border); padding: 20px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <h3>1. Síntesis de Propranolol (Betabloqueante Adrenérgico)</h3>
-                    <span class="tag tag-accent">2 ETAPAS</span>
+                    <span class="tag tag-accent">2 ETAPAS CONSECUTIVAS</span>
                   </div>
+
+                  <!-- Esquema 2D RDKit: Etapa 1 -->
+                  <div style="margin: 12px 0;">
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--color-accent); margin-bottom: 4px;">ETAPA 1: ALQUILACIÓN / APERTURA DE OXIRANO</div>
+                    <div class="chem-reaction-container" id="rxn-propranolol-step1" data-rxn="c1ccc2c(c1)cccc2O.C1CC1CCl>>c1ccc2c(c1)cccc2OCC1CO1" data-reagents="NaOH (aq), reflujo 2h">
+                      <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Generando esquema de reacción 2D RDKit...</div>
+                    </div>
+                  </div>
+
+                  <!-- Esquema 2D RDKit: Etapa 2 -->
+                  <div style="margin: 12px 0;">
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--color-accent); margin-bottom: 4px;">ETAPA 2: AMINÓLISIS NUCLEOFÍLICA (APERTURA REGIOPREDILECTA)</div>
+                    <div class="chem-reaction-container" id="rxn-propranolol-step2" data-rxn="c1ccc2c(c1)cccc2OCC1CO1.CC(C)N>>c1ccc2c(c1)cccc2OCC(O)CNC(C)C" data-reagents="i-PrNH2 en exceso, reflujo">
+                      <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Generando esquema de reacción 2D RDKit...</div>
+                    </div>
+                  </div>
+
                   <div class="table-container" style="border: none; margin: 8px 0;">
                     <table class="table" style="font-size: 0.85rem;">
                       <tr><th>Paso 1: Apertura de Oxirano</th><td>α-Naftol + Epiclorhidrina + NaOH (aq) ➔ 2-(1-Naftil)oximetiloxirano.</td></tr>
@@ -897,8 +1017,16 @@
                 <div style="border: 2px solid var(--color-border); padding: 20px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <h3>2. Síntesis de Dihidropiridinas (Reacción Multicomponente de Hantzsch)</h3>
-                    <span class="tag tag-neutral">1 ETAPA</span>
+                    <span class="tag tag-neutral">1 ETAPA · REACCIÓN 4-COMPONENTE</span>
                   </div>
+
+                  <!-- Esquema 2D RDKit: Hantzsch -->
+                  <div style="margin: 12px 0;">
+                    <div class="chem-reaction-container" id="rxn-dhpp-hantzsch" data-rxn="O=Cc1ccccc1.CC(=O)CC(=O)OC.N>>COC(=O)C1=C(C)NC(C)=C(C(=O)OC)C1c2ccccc2" data-reagents="EtOH 96%, reflujo 2h">
+                      <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Generando esquema de reacción multicomponente Hantzsch...</div>
+                    </div>
+                  </div>
+
                   <div class="table-container" style="border: none; margin: 8px 0;">
                     <table class="table" style="font-size: 0.85rem;">
                       <tr><th>Reactivos</th><td>Benzaldehído (1 equiv.) + Acetoacetato de metilo (2 equiv.) + Amoníaco concentrado (1.5 equiv.).</td></tr>
@@ -913,8 +1041,16 @@
                 <div style="border: 2px solid var(--color-border); padding: 20px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <h3>3. Síntesis de Paracetamol (Acetil-p-aminofenol)</h3>
-                    <span class="tag tag-outline">ACILACIÓN SELECTIVA</span>
+                    <span class="tag tag-outline">ACILACIÓN REGIOSELECTIVA</span>
                   </div>
+
+                  <!-- Esquema 2D RDKit: Paracetamol -->
+                  <div style="margin: 12px 0;">
+                    <div class="chem-reaction-container" id="rxn-paracetamol-acylation" data-rxn="Nc1ccc(O)cc1.CC(=O)OC(=O)C>>CC(=O)Nc1ccc(O)cc1" data-reagents="H2O tamponada, 25 °C">
+                      <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Generando esquema de reacción 2D RDKit...</div>
+                    </div>
+                  </div>
+
                   <div class="table-container" style="border: none; margin: 8px 0;">
                     <table class="table" style="font-size: 0.85rem;">
                       <tr><th>Reactivos</th><td>4-Aminofenol + Anhídrido acético en medio acuoso tamponado.</td></tr>
@@ -1324,6 +1460,369 @@
     }
 
     // ========================================================================
+    // PANTALLA 6B: LABORATORIO QUÍMICO & ESTRUCTURAS (RDKIT WASM + PUBCHEM API)
+    // ========================================================================
+    function renderEstructurasScreen() {
+      const lab = state.chemLab;
+      const pharma = getPharmacophoreForDrug(lab.activeDrugName, lab.activeSmiles);
+      const isPharmaActive = lab.highlightActive;
+
+      // Presets icónicos de la asignatura QFDOS
+      const presets = [
+        { name: 'Propranolol', smiles: 'CC(C)NCC(O)COc1cccc2ccccc12', role: 'β-bloqueante adrenérgico' },
+        { name: 'Atenolol', smiles: 'CC(C)NCC(O)COc1ccc(CC(N)=O)cc1', role: 'β1-bloqueante cardioselectivo' },
+        { name: 'Salbutamol', smiles: 'CC(C)(C)NCC(O)c1ccc(O)c(CO)c1', role: 'Agonista β2 adrenérgico' },
+        { name: 'Nifedipino', smiles: 'COC(=O)C1=C(C)NC(C)=C(C(=O)OC)C1c2ccccc2[N+](=O)[O-]', role: 'Bloqueante canal Ca²⁺ (DHP)' },
+        { name: 'Omeprazol', smiles: 'COc1ccc2[nH]c(S(=O)Cc3ncc(C)c(OC)c3C)nc2c1', role: 'Inhibidor bomba de protones (H⁺/K⁺)' },
+        { name: 'Diazepam', smiles: 'CN1C(=O)CN=C(c2ccccc2)c3cc(Cl)ccc13', role: 'Modulador alostérico GABAA' },
+        { name: 'Morfina', smiles: 'CN1CCC23C4Oc5c(O)ccc(CC1C2C=CC4O)c35', role: 'Agonista opioide µ' },
+        { name: 'Levodopa', smiles: 'N[C@@H](Cc1ccc(O)c(O)c1)C(=O)O', role: 'Precursor dopaminérgico' },
+        { name: 'Ciprofloxacino', smiles: 'O=C(O)c1cn(C2CC2)c3cc(N4CCNCC4)c(F)cc3c1=O', role: 'Fluoroquinolona antibacteriana' },
+        { name: 'Donepezilo', smiles: 'COC1=C(C=C2C(=C1)CC(C2=O)CC3CCN(CC3)CC4=CC=CC=C4)OC', role: 'Inhibidor AChE (Alzheimer)' },
+        { name: 'Captopril', smiles: 'C[C@H](CS)C(=O)N1CCC[C@H]1C(=O)O', role: 'Inhibidor de la ECA' },
+        { name: 'Enalapril', smiles: 'CCOC(=O)[C@H](CCc1ccccc1)N[C@@H](C)C(=O)N2CCC[C@H]2C(=O)O', role: 'Profármaco IECA' },
+        { name: 'Paracetamol', smiles: 'CC(=O)Nc1ccc(O)cc1', role: 'Analgésico antipirético' },
+        { name: 'Ibuprofeno', smiles: 'CC(C)Cc1ccc(cc1)C(C)C(=O)O', role: 'AINE arilpropiónico' }
+      ];
+
+      return `
+        <div class="container">
+          <!-- Hero Section -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+            <span class="tag tag-accent">RDKIT MINIMALLIB WASM 2025</span>
+            <span class="tag tag-neutral">NCBI PUBCHEM PUG REST API</span>
+            <span class="tag tag-outline">QUIMIOINFORMÁTICA DOCENTE</span>
+          </div>
+
+          <div class="kicker">CENTRO DE CÁLCULO ESTRUCTURAL · GRADO EN FARMACIA</div>
+          <h1 style="margin-bottom: 8px;">Laboratorio Molecular & Estructuras Químicas</h1>
+          <p style="color: var(--color-text-secondary); max-width: 820px; margin-bottom: 24px;">
+            Plataforma quimioinformática interactiva en tiempo real. Análisis conformacional 2D vectorial, cálculo dinámico de descriptores moleculares, verificación estricta de reglas de biodisponibilidad oral (Lipinski & Veber), consulta a PubChem y cálculo de similitud molecular mediante coeficientes Tanimoto (huellas de Morgan / ECFP4).
+          </p>
+
+          <div class="hr"></div>
+
+          <!-- Selector de Presets de la Asignatura -->
+          <div class="card" style="margin-bottom: 24px; padding: 18px; background: var(--color-surface);">
+            <div class="card-kicker">FÁRMACOS DE REFERENCIA DE LA ASIGNATURA</div>
+            <div style="font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 12px;">
+              Carga instantánea de monografías farmacológicas para inspección computacional y biofísica:
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              ${presets.map(p => `
+                <button class="btn ${lab.activeDrugName === p.name ? 'btn-primary' : 'btn-secondary'} btn-xs" data-chem-preset="${p.name}" data-smiles="${p.smiles}" title="${p.role}">
+                  ${p.name}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Buscador Dual: PubChem API / SMILES -->
+          <div class="card" style="margin-bottom: 24px; padding: 20px;">
+            <div class="card-kicker">ENTRADA ESTRUCTURAL & CONSULTA PUBCHEM</div>
+            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; margin-top: 8px;">
+              <input type="text" class="input input-mono" id="chem-lab-query-input" placeholder="Nombre de fármaco (ej. Salbutamol) o código SMILES..." value="${lab.searchQuery || lab.activeDrugName}" />
+              <button class="btn btn-primary" id="btn-chem-search-pubchem" title="Consultar base de datos PubChem mediante PUG REST">
+                🔍 BUSCAR PUBCHEM
+              </button>
+              <button class="btn btn-secondary" id="btn-chem-load-smiles" title="Renderizar directamente como SMILES">
+                ⚡ CARGAR SMILES
+              </button>
+            </div>
+            ${lab.loadingPubChem ? `
+              <div style="margin-top: 10px; font-size: 0.82rem; color: var(--color-accent); font-family: var(--font-mono);">
+                ⏳ Consultando NCBI PubChem PUG REST API...
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Grid Principal: Visualizador 2D y Descriptores -->
+          <div class="chem-workbench-grid" style="margin-bottom: 32px;">
+            <!-- Columna Izquierda: Canvas 2D Vectorial y Controles -->
+            <div class="card" style="padding: 24px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                <div>
+                  <h2 style="font-size: 1.4rem; margin-bottom: 4px; font-weight: 900;" id="chem-lab-title">${lab.activeDrugName}</h2>
+                  <span class="tag tag-accent" style="font-size: 0.72rem;">ESTRUCTURA 2D VECTORIAL</span>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn btn-secondary btn-xs" id="btn-chem-molview-3d" title="Abrir conformador 3D interactivo en MolView">
+                    🧊 3D MOLVIEW ↗
+                  </button>
+                  <button class="btn btn-secondary btn-xs" id="btn-chem-pubchem-link" title="Ver ficha en PubChem">
+                    🔬 PUBCHEM ↗
+                  </button>
+                  <button class="btn btn-secondary btn-xs" id="btn-chem-copy-smiles" title="Copiar SMILES">
+                    📋 COPIAR
+                  </button>
+                </div>
+              </div>
+
+              <!-- Canvas 2D Principal RDKit WASM -->
+              <div class="chem-svg-container" id="chem-lab-main-svg" style="min-height: 260px; margin-bottom: 16px;">
+                <div class="mono" style="font-size: 0.85rem; color: var(--color-text-muted);">Renderizando con RDKit WASM...</div>
+              </div>
+
+              <!-- Barra de Resaltado Farmacofórico y SMARTS -->
+              <div style="background: var(--color-surface-dim); border: 1px solid var(--color-border-subtle); padding: 12px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span style="font-size: 0.75rem; font-weight: 800; text-transform: uppercase;">FARMACÓFORO SUGERIDO:</span>
+                  <button class="btn ${isPharmaActive ? 'btn-primary' : 'btn-secondary'} btn-xs" id="btn-chem-toggle-highlight">
+                    ${isPharmaActive ? '✓ FARMACÓFORO RESALTADO' : '⚡ RESALTAR EN ROJO (#ec3013)'}
+                  </button>
+                </div>
+                ${pharma ? `
+                  <div style="font-size: 0.82rem; color: var(--color-text); margin-bottom: 4px;">
+                    <strong>${pharma.name}:</strong> ${pharma.description}
+                  </div>
+                  <div class="mono" style="font-size: 0.72rem; color: var(--color-text-muted);">Patrón SMARTS: ${pharma.smarts}</div>
+                ` : `
+                  <div style="font-size: 0.8rem; color: var(--color-text-muted);">Sin patrón automático predeterminado. Puedes introducir un SMARTS manual.</div>
+                `}
+
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                  <input type="text" class="input input-mono" id="chem-custom-smarts-input" placeholder="SMARTS manual (ej. c1ccccc1, [#7], C(=O)O)..." value="${lab.highlightSmarts || ''}" style="font-size: 0.78rem;" />
+                  <button class="btn btn-secondary btn-xs" id="btn-chem-apply-smarts">APLICAR</button>
+                </div>
+              </div>
+
+              <!-- Controles de Dibujo -->
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: var(--color-text-secondary);">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" id="chk-chem-stereo" ${lab.showStereo ? 'checked' : ''} />
+                  Estereoquímica R/S
+                </label>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span>Grosor de Enlace:</span>
+                  <select class="input" id="sel-chem-bond-width" style="padding: 2px 6px; font-size: 0.8rem;">
+                    <option value="1.5" ${lab.bondWidth === 1.5 ? 'selected' : ''}>1.5 px (Fino)</option>
+                    <option value="2.0" ${lab.bondWidth === 2.0 ? 'selected' : ''}>2.0 px (Estándar Modernist)</option>
+                    <option value="2.6" ${lab.bondWidth === 2.6 ? 'selected' : ''}>2.6 px (Grueso)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-muted); word-break: break-all; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--color-border-subtle);">
+                SMILES: <span id="chem-lab-smiles-display">${lab.activeSmiles}</span>
+              </div>
+            </div>
+
+            <!-- Columna Derecha: Descriptores Biofísicos & Scorecard -->
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <!-- Tarjeta de Descriptores Fisicoquímicos -->
+              <div class="card" style="padding: 20px;">
+                <div class="card-kicker">PROPIEDADES FISICOQUÍMICAS (RDKIT MINIMALLIB)</div>
+                <h3 style="margin-bottom: 12px;">Descriptores Moleculares</h3>
+
+                <div class="chem-descriptor-grid" id="chem-descriptors-container">
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Peso Molecular (MW)</div>
+                    <div class="val" id="val-mw">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Lipofilia (cLogP)</div>
+                    <div class="val" id="val-logp">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Donadores H (HBD)</div>
+                    <div class="val" id="val-hbd">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Aceptores H (HBA)</div>
+                    <div class="val" id="val-hba">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Superficie Polar (TPSA)</div>
+                    <div class="val" id="val-tpsa">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Enlaces Rotables (RotB)</div>
+                    <div class="val" id="val-rotb">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Fracción Csp3</div>
+                    <div class="val" id="val-csp3">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Anillos Aromáticos</div>
+                    <div class="val" id="val-arom">—</div>
+                  </div>
+                  <div class="chem-descriptor-tile">
+                    <div class="label">Átomos Pesados</div>
+                    <div class="val" id="val-heavy">—</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Scorecard de Biodisponibilidad Oral (Lipinski & Veber) -->
+              <div class="card" style="padding: 20px;" id="chem-scorecard-box">
+                <div class="card-kicker">FILTRO DE DROGABILIDAD & BIODISPONIBILIDAD ORAL</div>
+                <h3 style="margin-bottom: 12px;">Regla de 5 de Lipinski & Criterios de Veber</h3>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;" id="chem-rules-breakdown">
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--color-border-subtle); background: var(--color-surface);" id="rule-mw">
+                    <span style="font-size: 0.82rem;">Peso Molecular ≤ 500 Da</span>
+                    <span class="chem-badge-neutral" id="badge-mw">VERIFICANDO</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--color-border-subtle); background: var(--color-surface);" id="rule-logp">
+                    <span style="font-size: 0.82rem;">Lipofilia cLogP ≤ 5.0</span>
+                    <span class="chem-badge-neutral" id="badge-logp">VERIFICANDO</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--color-border-subtle); background: var(--color-surface);" id="rule-hbd">
+                    <span style="font-size: 0.82rem;">Donadores de H (HBD) ≤ 5</span>
+                    <span class="chem-badge-neutral" id="badge-hbd">VERIFICANDO</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--color-border-subtle); background: var(--color-surface);" id="rule-hba">
+                    <span style="font-size: 0.82rem;">Aceptores de H (HBA) ≤ 10</span>
+                    <span class="chem-badge-neutral" id="badge-hba">VERIFICANDO</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--color-border-subtle); background: var(--color-surface);" id="rule-veber-rotb">
+                    <span style="font-size: 0.82rem;">Veber: Enlaces Rotables ≤ 10</span>
+                    <span class="chem-badge-neutral" id="badge-veber-rotb">VERIFICANDO</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid var(--color-border-subtle); background: var(--color-surface);" id="rule-veber-tpsa">
+                    <span style="font-size: 0.82rem;">Veber: Superficie Polar TPSA ≤ 140 Å²</span>
+                    <span class="chem-badge-neutral" id="badge-veber-tpsa">VERIFICANDO</span>
+                  </div>
+                </div>
+
+                <div style="margin-top: 14px; padding: 10px 14px; border-left: 3px solid var(--color-accent); background: var(--color-surface-dim);" id="chem-verdict-box">
+                  <div style="font-weight: 800; font-size: 0.9rem;" id="chem-verdict-title">Evaluando biodisponibilidad...</div>
+                  <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 2px;" id="chem-verdict-desc">El motor RDKit WASM está computando las conformaciones moleculares.</div>
+                </div>
+              </div>
+
+              <!-- Ficha Oficial NCBI PubChem -->
+              ${lab.pubchemData || lab.pubchemDescription ? `
+                <div class="card" style="padding: 20px;">
+                  <div class="card-kicker">INFORMACIÓN OFICIAL NCBI PUBCHEM</div>
+                  <h3 style="margin-bottom: 10px;">Monografía Farmacológica</h3>
+                  ${lab.pubchemData ? `
+                    <div class="table-container" style="margin-bottom: 12px; border: 1px solid var(--color-border-subtle);">
+                      <table class="table" style="font-size: 0.78rem;">
+                        <tr><th>IUPAC</th><td style="word-break: break-all;">${lab.pubchemData.iupacName || '—'}</td></tr>
+                        <tr><th>Fórmula</th><td>${lab.pubchemData.molecularFormula || '—'}</td></tr>
+                        <tr><th>InChIKey</th><td style="font-family: var(--font-mono);">${lab.pubchemData.inchiKey || '—'}</td></tr>
+                        <tr><th>PubChem CID</th><td><a href="${getPubChemUrl(lab.pubchemData.cid)}" target="_blank" rel="noreferrer">${lab.pubchemData.cid} ↗</a></td></tr>
+                      </table>
+                    </div>
+                  ` : ''}
+                  ${lab.pubchemDescription ? `
+                    <div style="font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 10px;">
+                      ${lab.pubchemDescription}
+                    </div>
+                  ` : ''}
+                  ${lab.pubchemSynonyms && lab.pubchemSynonyms.length > 0 ? `
+                    <div style="font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted); margin-bottom: 6px;">SINÓNIMOS & NOMBRES COMERCIALES:</div>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                      ${lab.pubchemSynonyms.slice(0, 10).map(s => `<span class="tag tag-neutral" style="font-size: 0.65rem;">${s}</span>`).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Comparador Molecular & Similitud Tanimoto -->
+          <div class="card" style="padding: 24px; margin-bottom: 32px;">
+            <div class="card-kicker">BIOISOSTERISMO & HOMOLOGÍA ESTRUCTURAL</div>
+            <h2 style="margin-bottom: 6px;">Comparador Molecular & Huellas Morgan (Tanimoto Similarity)</h2>
+            <p style="color: var(--color-text-secondary); font-size: 0.88rem; margin-bottom: 18px;">
+              Calcula la distancia estructural y el coeficiente de similitud de Tanimoto (0.00 a 1.00) a partir de huellas dactilares moleculares circulares (Morgan Fingerprints / ECFP4, radio = 2, 2048 bits) generadas directamente por el núcleo RDKit WASM.
+            </p>
+
+            <!-- Presets de Pares de Fármacos para Comparación -->
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px;">
+              <button class="btn btn-secondary btn-xs" data-compare-preset="prop-aten">
+                PROPRANOLOL vs ATENOLOL (β-Bloqueantes)
+              </button>
+              <button class="btn btn-secondary btn-xs" data-compare-preset="morf-nalox">
+                MORFINA vs NALOXONA (Opioides)
+              </button>
+              <button class="btn btn-secondary btn-xs" data-compare-preset="nife-amlo">
+                NIFEDIPINO vs AMLODIPINO (Dihidropiridinas)
+              </button>
+              <button class="btn btn-secondary btn-xs" data-compare-preset="ibup-para">
+                IBUPROFENO vs PARACETAMOL (Analgésicos)
+              </button>
+              <button class="btn btn-secondary btn-xs" data-compare-preset="salb-adren">
+                SALBUTAMOL vs ADRENALINA (Adrenérgicos)
+              </button>
+            </div>
+
+            <!-- Grid de Comparación 2D -->
+            <div class="grid-2" style="margin-bottom: 20px;">
+              <!-- Molécula A -->
+              <div style="border: 2px solid var(--color-border); padding: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <strong style="font-size: 1.05rem;" id="compare-title-a">${lab.compareNameA}</strong>
+                  <span class="tag tag-accent">MOLÉCULA A</span>
+                </div>
+                <div class="field" style="margin-bottom: 8px;">
+                  <input type="text" class="input input-mono" id="input-compare-smiles-a" value="${lab.compareSmilesA}" style="font-size: 0.75rem;" />
+                </div>
+                <div class="chem-svg-container" id="chem-compare-svg-a" style="min-height: 180px;">
+                  <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Estructura A...</div>
+                </div>
+              </div>
+
+              <!-- Molécula B -->
+              <div style="border: 2px solid var(--color-border); padding: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <strong style="font-size: 1.05rem;" id="compare-title-b">${lab.compareNameB}</strong>
+                  <span class="tag tag-neutral">MOLÉCULA B</span>
+                </div>
+                <div class="field" style="margin-bottom: 8px;">
+                  <input type="text" class="input input-mono" id="input-compare-smiles-b" value="${lab.compareSmilesB}" style="font-size: 0.75rem;" />
+                </div>
+                <div class="chem-svg-container" id="chem-compare-svg-b" style="min-height: 180px;">
+                  <div class="mono" style="font-size: 0.8rem; color: var(--color-text-muted);">Estructura B...</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel de Resultados de Similitud Tanimoto -->
+            <div style="border: 2px solid var(--color-border); padding: 20px; background: var(--color-surface-dim);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
+                <div>
+                  <div style="font-size: 0.75rem; font-weight: 800; color: var(--color-accent); text-transform: uppercase;">MÉTRICA COMPUTACIONAL TANIMOTO</div>
+                  <h3 style="font-size: 1.3rem;" id="tanimoto-score-text">Calculando similitud...</h3>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-recalc-tanimoto">
+                  RECALCULAR TANIMOTO
+                </button>
+              </div>
+
+              <!-- Barra de Progreso Modernist -->
+              <div class="tanimoto-meter-bg" style="margin-bottom: 14px;">
+                <div class="tanimoto-meter-fill" id="tanimoto-bar" style="width: 0%;"></div>
+              </div>
+
+              <div class="grid-3" style="font-size: 0.82rem; margin-bottom: 12px;">
+                <div style="background: var(--color-surface); padding: 10px; border: 1px solid var(--color-border-subtle);">
+                  <div style="font-size: 0.7rem; color: var(--color-text-muted); font-weight: 700;">BITS ACTIVOS MOLÉCULA A</div>
+                  <div class="mono" style="font-size: 1.1rem; font-weight: 800;" id="tanimoto-bits-a">—</div>
+                </div>
+                <div style="background: var(--color-surface); padding: 10px; border: 1px solid var(--color-border-subtle);">
+                  <div style="font-size: 0.7rem; color: var(--color-text-muted); font-weight: 700;">BITS ACTIVOS MOLÉCULA B</div>
+                  <div class="mono" style="font-size: 1.1rem; font-weight: 800;" id="tanimoto-bits-b">—</div>
+                </div>
+                <div style="background: var(--color-surface); padding: 10px; border: 1px solid var(--color-border-subtle);">
+                  <div style="font-size: 0.7rem; color: var(--color-text-muted); font-weight: 700;">BITS COINCIDENTES (INTERSECCIÓN)</div>
+                  <div class="mono" style="font-size: 1.1rem; font-weight: 800; color: var(--color-accent);" id="tanimoto-bits-common">—</div>
+                </div>
+              </div>
+
+              <div style="font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.4;" id="tanimoto-interpretation">
+                El coeficiente de Tanimoto cuantifica el grado de superposición estructural. Valores T ≥ 0.70 indican una alta probabilidad de compartir la misma diana biológica o perfil farmacológico de clase (principio de similitud molecular).
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ========================================================================
     // PANTALLA 7: SIMULADOR DE AFINIDAD BIOFÍSICA
     // ========================================================================
     function renderSimuladorScreen() {
@@ -1598,9 +2097,21 @@
                   <button class="btn btn-ghost btn-sm" id="btn-close-modal">✕ CERRAR</button>
                 </div>
                 <div class="dialog-body">
-                  <div class="field" style="margin-bottom: 20px;">
+                  <div class="field" style="margin-bottom: 14px;">
                     <input type="text" class="input input-mono" id="modal-search-input" placeholder="Buscar por nombre de fármaco, mecanismo, tema..." value="${state.modalData || ''}" autofocus />
                   </div>
+
+                  ${q ? `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding: 10px 14px; background: var(--color-surface-dim); border: 1px solid var(--color-border); border-left: 3px solid var(--color-accent);">
+                      <div>
+                        <div style="font-weight: 800; font-size: 0.85rem;">Laboratorio Molecular QFDOS</div>
+                        <div style="font-size: 0.76rem; color: var(--color-text-secondary);">Explorar "${q}" en 2D/3D con RDKit y consultar NCBI PubChem</div>
+                      </div>
+                      <button class="btn btn-primary btn-xs" id="btn-modal-open-lab" data-query="${q}">
+                        ABRIR EN LAB [RDKIT] ➔
+                      </button>
+                    </div>
+                  ` : ''}
 
                   <div style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
                     ${!q ? `
@@ -2259,6 +2770,9 @@
 
       // Controles de Flashcard Modal
       flashcardModalListeners();
+
+      // Controles Químicos y de Estructuras (RDKit WASM + PubChem API)
+      chemEventListeners();
     }
 
     function examRadioListeners() {
@@ -2333,14 +2847,451 @@
       }
     }
 
-    // Cargar estructuras 2D de moléculas de forma asíncrona
+    // ========================================================================
+    // MANEJADORES DE EVENTOS DE QUÍMICA & ESTRUCTURAS (RDKIT & PUBCHEM)
+    // ========================================================================
+    function chemEventListeners() {
+      // 1. Acciones en tarjetas de fármacos (Vista de Tema)
+      document.querySelectorAll('[data-copy-smiles]').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const sm = btn.getAttribute('data-copy-smiles');
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(sm);
+            const orig = btn.innerText;
+            btn.innerText = '✓ COPIADO';
+            btn.classList.add('btn-primary');
+            setTimeout(() => {
+              btn.innerText = orig;
+              btn.classList.remove('btn-primary');
+            }, 1800);
+          }
+        };
+      });
+
+      document.querySelectorAll('[data-toggle-pharma]').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const cardId = btn.getAttribute('data-toggle-pharma');
+          state.activePharmacophoreToggles[cardId] = !state.activePharmacophoreToggles[cardId];
+          render();
+        };
+      });
+
+      document.querySelectorAll('[data-molview-smiles]').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const sm = btn.getAttribute('data-molview-smiles');
+          window.open(getMolViewUrl(sm), '_blank');
+        };
+      });
+
+      document.querySelectorAll('[data-pubchem-drug]').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const drug = btn.getAttribute('data-pubchem-drug');
+          window.open(`https://pubchem.ncbi.nlm.nih.gov/#query=${encodeURIComponent(drug)}`, '_blank');
+        };
+      });
+
+      document.querySelectorAll('[data-open-chem-lab]').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const drugName = btn.getAttribute('data-open-chem-lab');
+          const sm = btn.getAttribute('data-smiles');
+          state.chemLab.activeDrugName = drugName;
+          state.chemLab.activeSmiles = sm;
+          state.chemLab.searchQuery = drugName;
+          state.chemLab.highlightActive = false;
+          state.chemLab.pubchemData = null;
+          state.chemLab.pubchemDescription = null;
+          state.chemLab.pubchemSynonyms = [];
+          state.screen = 'estructuras';
+          window.scrollTo(0, 0);
+          render();
+        };
+      });
+
+      // 2. Controles de la pantalla "Laboratorio Químico" (screen: 'estructuras')
+      document.querySelectorAll('[data-chem-preset]').forEach(btn => {
+        btn.onclick = () => {
+          const name = btn.getAttribute('data-chem-preset');
+          const sm = btn.getAttribute('data-smiles');
+          state.chemLab.activeDrugName = name;
+          state.chemLab.activeSmiles = sm;
+          state.chemLab.searchQuery = name;
+          state.chemLab.highlightActive = false;
+          state.chemLab.pubchemData = null;
+          state.chemLab.pubchemDescription = null;
+          state.chemLab.pubchemSynonyms = [];
+          render();
+        };
+      });
+
+      const inputQuery = document.getElementById('chem-lab-query-input');
+      if (inputQuery) {
+        inputQuery.onkeydown = (e) => {
+          if (e.key === 'Enter') {
+            const btnSearch = document.getElementById('btn-chem-search-pubchem');
+            if (btnSearch) btnSearch.click();
+          }
+        };
+        inputQuery.oninput = (e) => {
+          state.chemLab.searchQuery = e.target.value;
+        };
+      }
+
+      const btnPubChemSearch = document.getElementById('btn-chem-search-pubchem');
+      if (btnPubChemSearch) {
+        btnPubChemSearch.onclick = async () => {
+          const q = (state.chemLab.searchQuery || '').trim();
+          if (!q) return;
+
+          state.chemLab.loadingPubChem = true;
+          render();
+
+          try {
+            let pc = null;
+            if (q.includes('=') || q.includes('#') || q.includes('(') || q.includes(')') || q.length > 25) {
+              pc = await searchPubChemBySmiles(q);
+            } else {
+              pc = await searchPubChemByName(q);
+            }
+
+            if (pc) {
+              state.chemLab.activeDrugName = pc.name || q;
+              state.chemLab.activeSmiles = pc.canonicalSmiles || pc.isomericSmiles || q;
+              state.chemLab.activeCid = pc.cid;
+              state.chemLab.pubchemData = pc;
+
+              if (pc.cid) {
+                const desc = await fetchCompoundDescription(pc.cid);
+                state.chemLab.pubchemDescription = desc;
+                const syns = await fetchCompoundSynonyms(pc.cid, 12);
+                state.chemLab.pubchemSynonyms = syns;
+              }
+            } else {
+              alert(`No se encontró registro en PubChem para: "${q}". Puedes probar con su nombre en inglés o introduciendo su código SMILES.`);
+            }
+          } catch (err) {
+            console.warn('Error consultando PubChem:', err);
+          } finally {
+            state.chemLab.loadingPubChem = false;
+            render();
+          }
+        };
+      }
+
+      const btnLoadSmiles = document.getElementById('btn-chem-load-smiles');
+      if (btnLoadSmiles) {
+        btnLoadSmiles.onclick = () => {
+          const q = (state.chemLab.searchQuery || '').trim();
+          if (q) {
+            state.chemLab.activeSmiles = q;
+            state.chemLab.activeDrugName = 'Molécula Personalizada';
+            state.chemLab.pubchemData = null;
+            state.chemLab.pubchemDescription = null;
+            state.chemLab.pubchemSynonyms = [];
+            state.chemLab.highlightActive = false;
+            render();
+          }
+        };
+      }
+
+      const btnMolView3D = document.getElementById('btn-chem-molview-3d');
+      if (btnMolView3D) {
+        btnMolView3D.onclick = () => {
+          window.open(getMolViewUrl(state.chemLab.activeSmiles), '_blank');
+        };
+      }
+
+      const btnPubChemLink = document.getElementById('btn-chem-pubchem-link');
+      if (btnPubChemLink) {
+        btnPubChemLink.onclick = () => {
+          if (state.chemLab.activeCid) {
+            window.open(getPubChemUrl(state.chemLab.activeCid), '_blank');
+          } else {
+            window.open(`https://pubchem.ncbi.nlm.nih.gov/#query=${encodeURIComponent(state.chemLab.activeDrugName || state.chemLab.activeSmiles)}`, '_blank');
+          }
+        };
+      }
+
+      const btnCopyLabSmiles = document.getElementById('btn-chem-copy-smiles');
+      if (btnCopyLabSmiles) {
+        btnCopyLabSmiles.onclick = () => {
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(state.chemLab.activeSmiles);
+            btnCopyLabSmiles.innerText = '✓ COPIADO';
+            btnCopyLabSmiles.classList.add('btn-primary');
+            setTimeout(() => {
+              btnCopyLabSmiles.innerText = '📋 COPIAR';
+              btnCopyLabSmiles.classList.remove('btn-primary');
+            }, 1800);
+          }
+        };
+      }
+
+      const btnToggleHighlight = document.getElementById('btn-chem-toggle-highlight');
+      if (btnToggleHighlight) {
+        btnToggleHighlight.onclick = () => {
+          state.chemLab.highlightActive = !state.chemLab.highlightActive;
+          render();
+        };
+      }
+
+      const btnApplySmarts = document.getElementById('btn-chem-apply-smarts');
+      if (btnApplySmarts) {
+        btnApplySmarts.onclick = () => {
+          const input = document.getElementById('chem-custom-smarts-input');
+          if (input) {
+            state.chemLab.highlightSmarts = input.value.trim();
+            state.chemLab.highlightActive = Boolean(state.chemLab.highlightSmarts);
+            render();
+          }
+        };
+      }
+
+      const chkStereo = document.getElementById('chk-chem-stereo');
+      if (chkStereo) {
+        chkStereo.onchange = (e) => {
+          state.chemLab.showStereo = e.target.checked;
+          render();
+        };
+      }
+
+      const selBondWidth = document.getElementById('sel-chem-bond-width');
+      if (selBondWidth) {
+        selBondWidth.onchange = (e) => {
+          state.chemLab.bondWidth = parseFloat(e.target.value);
+          render();
+        };
+      }
+
+      // Comparador Tanimoto
+      document.querySelectorAll('[data-compare-preset]').forEach(btn => {
+        btn.onclick = () => {
+          const preset = btn.getAttribute('data-compare-preset');
+          if (preset === 'prop-aten') {
+            state.chemLab.compareNameA = 'Propranolol';
+            state.chemLab.compareSmilesA = 'CC(C)NCC(O)COc1cccc2ccccc12';
+            state.chemLab.compareNameB = 'Atenolol';
+            state.chemLab.compareSmilesB = 'CC(C)NCC(O)COc1ccc(CC(N)=O)cc1';
+          } else if (preset === 'morf-nalox') {
+            state.chemLab.compareNameA = 'Morfina';
+            state.chemLab.compareSmilesA = 'CN1CCC23C4Oc5c(O)ccc(CC1C2C=CC4O)c35';
+            state.chemLab.compareNameB = 'Naloxona';
+            state.chemLab.compareSmilesB = 'C=CCN1CCC23C4Oc5c(O)ccc(CC1(C2C(=O)CC4)O)c35';
+          } else if (preset === 'nife-amlo') {
+            state.chemLab.compareNameA = 'Nifedipino';
+            state.chemLab.compareSmilesA = 'COC(=O)C1=C(C)NC(C)=C(C(=O)OC)C1c2ccccc2[N+](=O)[O-]';
+            state.chemLab.compareNameB = 'Amlodipino';
+            state.chemLab.compareSmilesB = 'CCOC(=O)C1=C(COCCN)NC(C)=C(C(=O)OC)C1c2ccccc2Cl';
+          } else if (preset === 'ibup-para') {
+            state.chemLab.compareNameA = 'Ibuprofeno';
+            state.chemLab.compareSmilesA = 'CC(C)Cc1ccc(cc1)C(C)C(=O)O';
+            state.chemLab.compareNameB = 'Paracetamol';
+            state.chemLab.compareSmilesB = 'CC(=O)Nc1ccc(O)cc1';
+          } else if (preset === 'salb-adren') {
+            state.chemLab.compareNameA = 'Salbutamol';
+            state.chemLab.compareSmilesA = 'CC(C)(C)NCC(O)c1ccc(O)c(CO)c1';
+            state.chemLab.compareNameB = 'Adrenalina';
+            state.chemLab.compareSmilesB = 'CNC[C@H](O)c1ccc(O)c(O)c1';
+          }
+          render();
+        };
+      });
+
+      const inputSmilesA = document.getElementById('input-compare-smiles-a');
+      if (inputSmilesA) {
+        inputSmilesA.onchange = (e) => {
+          state.chemLab.compareSmilesA = e.target.value.trim();
+          render();
+        };
+      }
+
+      const inputSmilesB = document.getElementById('input-compare-smiles-b');
+      if (inputSmilesB) {
+        inputSmilesB.onchange = (e) => {
+          state.chemLab.compareSmilesB = e.target.value.trim();
+          render();
+        };
+      }
+
+      const btnRecalcTanimoto = document.getElementById('btn-recalc-tanimoto');
+      if (btnRecalcTanimoto) {
+        btnRecalcTanimoto.onclick = () => {
+          render();
+        };
+      }
+
+      // Modal de búsqueda: abrir en Laboratorio Químico
+      const btnModalOpenLab = document.getElementById('btn-modal-open-lab');
+      if (btnModalOpenLab) {
+        btnModalOpenLab.onclick = () => {
+          const q = btnModalOpenLab.getAttribute('data-query');
+          if (q) {
+            state.chemLab.searchQuery = q;
+            state.chemLab.activeDrugName = q;
+          }
+          state.screen = 'estructuras';
+          state.activeModal = null;
+          render();
+          const trigger = document.getElementById('btn-chem-search-pubchem');
+          if (trigger && q) trigger.click();
+        };
+      }
+    }
+
+    // ========================================================================
+    // CARGADOR ASÍNCRONO DE ESTRUCTURAS, REACCIONES Y DESCRIPTORES
+    // ========================================================================
     async function loadMoleculesSvgAsync() {
-      const containers = document.querySelectorAll('.chem-svg-container');
-      for (const el of containers) {
+      // 1. Renderizar ranuras 2D en tarjetas de temas con soporte de farmacóforos
+      const topicContainers = document.querySelectorAll('.chem-svg-container[data-card-id]');
+      for (const el of topicContainers) {
         const smiles = el.getAttribute('data-smiles');
+        const drugName = el.getAttribute('data-drug');
+        const cardId = el.getAttribute('data-card-id');
         if (smiles) {
-          const svg = await renderMoleculeSvg(smiles, 260, 150);
+          const isPharma = Boolean(state.activePharmacophoreToggles[cardId]);
+          const pharmaInfo = isPharma ? getPharmacophoreForDrug(drugName, smiles) : null;
+          const svg = await renderMoleculeSvg(smiles, {
+            width: 280,
+            height: 160,
+            highlightSmarts: pharmaInfo ? pharmaInfo.smarts : null,
+            addStereoAnnotation: true,
+            bondLineWidth: 2.0
+          });
           if (svg) el.innerHTML = svg;
+        }
+      }
+
+      // 2. Renderizar esquemas de reacción en Prácticas (Módulo 01)
+      const rxnContainers = document.querySelectorAll('.chem-reaction-container[data-rxn]');
+      for (const el of rxnContainers) {
+        const rxn = el.getAttribute('data-rxn');
+        const reagents = el.getAttribute('data-reagents') || '';
+        if (rxn) {
+          const svg = await renderReactionSvg(rxn, {
+            width: 620,
+            height: 180,
+            reagents: reagents,
+            bondLineWidth: 2.0
+          });
+          if (svg) el.innerHTML = svg;
+        }
+      }
+
+      // 3. Renderizar el workbench completo si estamos en la pantalla "estructuras"
+      if (state.screen === 'estructuras') {
+        const lab = state.chemLab;
+        const mainSlot = document.getElementById('chem-lab-main-svg');
+        if (mainSlot && lab.activeSmiles) {
+          const pharmaInfo = getPharmacophoreForDrug(lab.activeDrugName, lab.activeSmiles);
+          const activeSmarts = lab.highlightActive ? (lab.highlightSmarts || (pharmaInfo ? pharmaInfo.smarts : null)) : null;
+
+          const mainSvg = await renderMoleculeSvg(lab.activeSmiles, {
+            width: 440,
+            height: 260,
+            highlightSmarts: activeSmarts,
+            addStereoAnnotation: lab.showStereo,
+            bondLineWidth: lab.bondWidth
+          });
+          if (mainSvg) mainSlot.innerHTML = mainSvg;
+
+          // Calcular descriptores moleculares con RDKit
+          const desc = await computeDescriptors(lab.activeSmiles);
+          if (desc) {
+            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+            setVal('val-mw', desc.mw + ' Da');
+            setVal('val-logp', desc.logp);
+            setVal('val-hbd', desc.hbd);
+            setVal('val-hba', desc.hba);
+            setVal('val-tpsa', desc.tpsa + ' Å²');
+            setVal('val-rotb', desc.rotb);
+            setVal('val-csp3', desc.fractionCsp3);
+            setVal('val-arom', desc.aromaticRings);
+            setVal('val-heavy', desc.heavyAtoms);
+
+            // Evaluar reglas de Lipinski y Veber
+            const report = await evaluateLipinskiVeber(desc);
+            if (report && report.valid) {
+              const setBadge = (id, passed, passText = 'PASA', failText = 'FALLA') => {
+                const el = document.getElementById(id);
+                if (el) {
+                  el.className = passed ? 'chem-badge-ok' : 'chem-badge-fail';
+                  el.innerText = passed ? `✓ ${passText}` : `✕ ${failText}`;
+                }
+              };
+
+              const lip = report.lipinski;
+              const veb = report.veber;
+              setBadge('badge-mw', desc.mw <= 500);
+              setBadge('badge-logp', desc.logp <= 5.0);
+              setBadge('badge-hbd', desc.hbd <= 5);
+              setBadge('badge-hba', desc.hba <= 10);
+              setBadge('badge-veber-rotb', desc.rotb <= 10);
+              setBadge('badge-veber-tpsa', desc.tpsa <= 140.0);
+
+              const verdictTitle = document.getElementById('chem-verdict-title');
+              const verdictDesc = document.getElementById('chem-verdict-desc');
+              const verdictBox = document.getElementById('chem-verdict-box');
+
+              if (verdictTitle && verdictDesc) {
+                if (report.drugLike) {
+                  verdictTitle.innerText = '✓ PERFIL ÓPTIMO DE DROGABILIDAD Y ABSORCIÓN ORAL';
+                  verdictDesc.innerText = `Cumple estrictamente la Regla de 5 de Lipinski (${lip.violations} violaciones) y ambos criterios de Veber (RotB = ${desc.rotb}, TPSA = ${desc.tpsa} Å²). Favorable para desarrollo farmacéutico oral.`;
+                  if (verdictBox) verdictBox.style.borderLeftColor = '#166534';
+                } else {
+                  verdictTitle.innerText = '✕ VIOLACIÓN DE CRITERIOS DE BIODISPONIBILIDAD ORAL';
+                  verdictDesc.innerText = `Presenta ${lip.violations} violaciones de Lipinski y ${veb.violations} violaciones de Veber. Sugiere permeabilidad intestinal o solubilidad restringida (requeriría optimización estructural o formulación parenteral/especial).`;
+                  if (verdictBox) verdictBox.style.borderLeftColor = 'var(--color-accent)';
+                }
+              }
+            }
+          }
+        }
+
+        // Renderizar moléculas del comparador (A y B)
+        const slotA = document.getElementById('chem-compare-svg-a');
+        if (slotA && lab.compareSmilesA) {
+          const svgA = await renderMoleculeSvg(lab.compareSmilesA, { width: 260, height: 160 });
+          if (svgA) slotA.innerHTML = svgA;
+        }
+
+        const slotB = document.getElementById('chem-compare-svg-b');
+        if (slotB && lab.compareSmilesB) {
+          const svgB = await renderMoleculeSvg(lab.compareSmilesB, { width: 260, height: 160 });
+          if (svgB) slotB.innerHTML = svgB;
+        }
+
+        // Calcular coeficiente Tanimoto
+        if (lab.compareSmilesA && lab.compareSmilesB) {
+          const simResult = await calculateTanimoto(lab.compareSmilesA, lab.compareSmilesB);
+          if (simResult && simResult.valid) {
+            const scoreText = document.getElementById('tanimoto-score-text');
+            const bar = document.getElementById('tanimoto-bar');
+            const bitsA = document.getElementById('tanimoto-bits-a');
+            const bitsB = document.getElementById('tanimoto-bits-b');
+            const bitsCommon = document.getElementById('tanimoto-bits-common');
+            const interp = document.getElementById('tanimoto-interpretation');
+
+            if (scoreText) scoreText.innerText = `${simResult.similarityPercent} SIMILITUD (T = ${simResult.similarity})`;
+            if (bar) bar.style.width = simResult.similarityPercent;
+            if (bitsA) bitsA.innerText = `${simResult.bitsA} bits`;
+            if (bitsB) bitsB.innerText = `${simResult.bitsB} bits`;
+            if (bitsCommon) bitsCommon.innerText = `${simResult.commonBits} bits coincidentes`;
+
+            if (interp) {
+              if (simResult.similarity >= 0.85) {
+                interp.innerHTML = `<strong>Alta Homología Estructural (T = ${simResult.similarity}):</strong> Fuerte conservación farmacofórica y topológica. Gran probabilidad de compartir afinidad por la misma diana macromolecular con perfil SAR semejante.`;
+              } else if (simResult.similarity >= 0.60) {
+                interp.innerHTML = `<strong>Similitud Media-Alta (T = ${simResult.similarity}):</strong> Comparten subestructuras clave o núcleo heterocíclico central, con modificaciones periféricas que modulan la selectividad o solubilidad.`;
+              } else {
+                interp.innerHTML = `<strong>Baja Similitud Global (T = ${simResult.similarity}):</strong> Estructuras topológicamente divergentes o esqueletos químicos diferentes (ej. scaffold hopping).`;
+              }
+            }
+          }
         }
       }
     }
