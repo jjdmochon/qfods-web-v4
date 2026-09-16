@@ -69,6 +69,7 @@
       user: JSON.parse(localStorage.getItem('qfdos_v4_user') || '{"role":"estudiante","name":"Estudiante QFDOS","email":"estudiante@correo.ugr.es"}'),
       safetySigned: localStorage.getItem('qfdos_v4_safety_signed') === 'true',
       selectedTopicId: 'tema-01',
+      topicDrugSearch: '',
       activeModal: null, // 'search' | 'question' | 'spotify' | 'quiz' | 'flashcards' | 'fir'
       searchTerm: '',
       modalData: null,
@@ -732,6 +733,18 @@
     // ========================================================================
     function renderTopicScreen() {
       const topic = TOPICS.find(t => t.id === state.selectedTopicId) || TOPICS[1];
+      const drugSearchVal = (state.topicDrugSearch || '').trim();
+      const normTerm = drugSearchVal.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const filteredDrugs = (!topic.drugs || topic.drugs.length === 0) ? [] : (
+        !normTerm ? topic.drugs : topic.drugs.filter(d => {
+          const name = (d.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const role = (d.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const formula = (d.formula || '').toLowerCase();
+          const smiles = (d.smiles || '').toLowerCase();
+          const pdbId = (d.pdbId || '').toLowerCase();
+          return name.includes(normTerm) || role.includes(normTerm) || formula.includes(normTerm) || smiles.includes(normTerm) || pdbId.includes(normTerm);
+        })
+      );
       return `
         <div class="container">
           <div style="margin-bottom: 16px;">
@@ -798,15 +811,50 @@
           <!-- Monografías de Fármacos de Referencia -->
           <div style="margin-bottom: 32px;">
             <div class="kicker">FARMACOQUÍMICA & ESTRUCTURAS 2D</div>
-            <h2 style="margin-bottom: 16px;">Fármacos de Referencia</h2>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+              <h2 style="margin: 0;">Fármacos de Referencia</h2>
+              ${(topic.drugs && topic.drugs.length > 0) ? `
+                <span class="tag ${filteredDrugs.length > 0 ? 'tag-accent' : 'tag-neutral'} tag-mono" style="font-size: 0.78rem;">
+                  ${drugSearchVal
+                    ? `MOSTRANDO ${filteredDrugs.length} DE ${topic.drugs.length} FÁRMACOS`
+                    : `${topic.drugs.length} FÁRMACOS REGISTRADOS`}
+                </span>
+              ` : ''}
+            </div>
+
+            ${(topic.drugs && topic.drugs.length > 0) ? `
+              <div class="card" style="padding: 12px 16px; margin-bottom: 20px; background: var(--color-surface-dim); border: 2px solid var(--color-border);">
+                <div style="position: relative; width: 100%; max-width: 540px;">
+                  <input
+                    type="text"
+                    id="input-topic-drug-search"
+                    placeholder="Buscar fármaco por nombre, mecanismo, fórmula, SMILES..."
+                    value="${state.topicDrugSearch || ''}"
+                    class="form-input"
+                    style="width: 100%; padding: 8px 34px 8px 12px; font-size: 0.88rem; font-family: var(--font-sans);"
+                  />
+                  ${state.topicDrugSearch ? `
+                    <button id="btn-clear-topic-drug-search" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; font-size: 1rem; color: var(--color-text-muted);" title="Limpiar búsqueda">✕</button>
+                  ` : ''}
+                </div>
+              </div>
+            ` : ''}
 
             ${(!topic.drugs || topic.drugs.length === 0) ? `
               <div class="card" style="padding: 24px; text-align: center; color: var(--color-text-muted);">
                 Este tema es introductorio de guía docente o metodológico y no tiene fármacos de referencia específicos.
               </div>
+            ` : (filteredDrugs.length === 0) ? `
+              <div class="card" style="padding: 36px 20px; text-align: center; background: var(--color-surface-dim); border: 2px solid var(--color-border);">
+                <div style="font-size: 1.1rem; font-weight: 700; margin-bottom: 6px;">No se encontraron fármacos</div>
+                <div style="color: var(--color-text-muted); font-size: 0.9rem; margin-bottom: 16px;">
+                  No hay ningún principio activo en este tema que coincida con «<strong>${state.topicDrugSearch}</strong>».
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btn-reset-topic-drug-search">LIMPIAR BÚSQUEDA</button>
+              </div>
             ` : `
               <div class="grid-2">
-                ${topic.drugs.map((d, idx) => {
+                ${filteredDrugs.map((d, idx) => {
                   const cardId = `${topic.id}-${idx}`;
                   const isPharmaActive = Boolean(state.activePharmacophoreToggles[cardId]);
                   const pharmaInfo = getPharmacophoreForDrug(d.name, d.smiles);
@@ -3048,11 +3096,40 @@
       document.querySelectorAll('[data-open-topic]').forEach(el => {
         el.onclick = () => {
           state.selectedTopicId = el.getAttribute('data-open-topic');
+          state.topicDrugSearch = '';
           state.screen = 'topic';
           window.scrollTo(0, 0);
           render();
         };
       });
+
+      // Buscador de fármacos dentro del tema
+      const drugSearchInput = document.getElementById('input-topic-drug-search');
+      if (drugSearchInput) {
+        drugSearchInput.oninput = (e) => {
+          state.topicDrugSearch = e.target.value;
+          render();
+          const reInput = document.getElementById('input-topic-drug-search');
+          if (reInput) {
+            reInput.focus();
+            reInput.selectionStart = reInput.selectionEnd = reInput.value.length;
+          }
+        };
+      }
+      const btnClearDrugSearch = document.getElementById('btn-clear-topic-drug-search');
+      if (btnClearDrugSearch) {
+        btnClearDrugSearch.onclick = () => {
+          state.topicDrugSearch = '';
+          render();
+        };
+      }
+      const btnResetDrugSearch = document.getElementById('btn-reset-topic-drug-search');
+      if (btnResetDrugSearch) {
+        btnResetDrugSearch.onclick = () => {
+          state.topicDrugSearch = '';
+          render();
+        };
+      }
 
       // Modales Triggers
       const btnSearch = document.getElementById('btn-trigger-search');
